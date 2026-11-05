@@ -87,6 +87,9 @@ export function evaluate(rec, q) {
     mainInflow: Number(q.mainInflow) || 0,
     premium: q.premium == null ? null : Number(q.premium),
     scale: Number(q.scale) || 0,
+    flow3: rec.f3 == null ? null : Number(rec.f3),
+    flow5: rec.f5 == null ? null : Number(rec.f5),
+    flow10: rec.f10 == null ? null : Number(rec.f10),
     qdate,
     spark: rec.d.slice(-30),
     // 近 30 日涨幅（用于该列排序）
@@ -100,6 +103,8 @@ export function evaluate(rec, q) {
       cond: { jTrough: false, jUp: false, aboveMa17: false, ma5AboveMa17: false },
       met: 0, score: 0, distMa17: null, distMa20: null, strength: 0,
       ma5: null, ma17: null, ma20: null, ma60: null,
+      trendScore: null, trendLabel: null, order: null, ma20Slope: null,
+      pos60: null, hi60: null, lo60: null, distHigh: null,
       jLast: null, jPrev: null, jMin6: null, jOverbought: false,
       pullbackHit: "-", buyReady: false, stop: null,
     });
@@ -183,6 +188,32 @@ export function evaluate(rec, q) {
 
   const distMa17 = (price / ma17 - 1) * 100;
   const distMa20 = (price / ma20 - 1) * 100;
+
+  // 趋势分析：均线排列 / MA20 斜率 / 60 日位置
+  const ma20Series = [];
+  for (let i = 19; i < eff.length; i++) ma20Series.push(mean(eff.slice(i - 19, i + 1)));
+  const ma20Prev5 = ma20Series.length >= 6 ? ma20Series[ma20Series.length - 6] : null;
+  const ma20Slope = ma20Prev5 ? (ma20 / ma20Prev5 - 1) * 100 : null;
+  const win60 = eff.slice(-60);
+  const hi60 = Math.max(...win60);
+  const lo60 = Math.min(...win60);
+  const pos60 = hi60 > lo60 ? ((price - lo60) / (hi60 - lo60)) * 100 : 50;
+  const order = ma60 == null ? "—"
+    : (ma5 > ma17 && ma17 > ma20 && ma20 > ma60) ? "多头"
+      : (ma5 < ma17 && ma17 < ma20 && ma20 < ma60) ? "空头" : "交织";
+  const distHigh = (price / hi60 - 1) * 100;
+
+  let trendScore = 50;
+  if (order === "多头") trendScore += 20;
+  else if (order === "空头") trendScore -= 20;
+  trendScore += price > ma20 ? 10 : -10;
+  if (ma20Slope != null) trendScore += Math.max(-10, Math.min(10, ma20Slope * 5));
+  trendScore += (pos60 - 50) * 0.2;
+  if (distMa20 > 15) trendScore -= 8;
+  trendScore = Math.max(0, Math.min(100, Math.round(trendScore)));
+  const trendLabel = trendScore >= 70 ? "强势" : trendScore >= 58 ? "偏强"
+    : trendScore >= 42 ? "震荡" : trendScore >= 30 ? "偏弱" : "走弱";
+
   const distMa5 = (price / ma5 - 1) * 100;
   // 回踩17日线参考触发：近 20 个交易日最低价触及 MA17 的次数
   const lows = rec.dl && rec.dl.length ? rec.dl : rec.d.slice(-20);
@@ -197,6 +228,7 @@ export function evaluate(rec, q) {
     met, buyReady, score: posScore * 50 + (jUp ? 20 : 0),
     ma5, ma17, ma20, ma60,
     distMa17, distMa20, distMa5,
+    trendScore, trendLabel, order, ma20Slope, pos60, hi60, lo60, distHigh,
     // 策略 v2 排序：距 MA20 越远（趋势越强）越优先
     strength: Math.round(distMa20 * 100) / 100,
     jLast, jPrev, jMin6, jOverbought: jLast >= J_OVERBOUGHT,
