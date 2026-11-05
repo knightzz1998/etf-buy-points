@@ -210,6 +210,12 @@ export function evaluate(rec, q) {
   if (ma20Slope != null) trendScore += Math.max(-10, Math.min(10, ma20Slope * 5));
   trendScore += (pos60 - 50) * 0.2;
   if (distMa20 > 15) trendScore -= 8;
+  // 资金：3 日净流入 / (当日成交额×3)，±8 分封顶
+  const flow3 = rec.f3 == null ? null : Number(rec.f3);
+  const amt = Number(q.amount) || 0;
+  if (flow3 != null && amt > 0) {
+    trendScore += Math.max(-8, Math.min(8, (flow3 / (amt * 3)) * 30));
+  }
   trendScore = Math.max(0, Math.min(100, Math.round(trendScore)));
   const trendLabel = trendScore >= 70 ? "强势" : trendScore >= 58 ? "偏强"
     : trendScore >= 42 ? "震荡" : trendScore >= 30 ? "偏弱" : "走弱";
