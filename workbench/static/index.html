@@ -36,6 +36,12 @@
       </div>
     </header>
 
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="board" role="tab">买点看板</button>
+      <button class="tab" data-view="positions" role="tab">我的持仓</button>
+    </nav>
+
+    <section class="view" id="view-board">
     <section class="stats" id="stats" aria-label="信号统计">
       <button class="tile" data-filter="all"><span class="tile-label">全市场</span><strong id="stat-total">--</strong><em>只 ETF</em></button>
       <button class="tile tile-buy" data-filter="buy"><span class="tile-label">🟢 可以买入</span><strong id="stat-buy">--</strong><em>第一买点</em></button>
@@ -120,6 +126,54 @@
       </table>
       <div class="empty" id="empty" hidden></div>
     </main>
+    </section>
+
+    <section class="view" id="view-positions" hidden>
+      <div class="pos-summary">
+        <div><span>总市值</span><b id="pos-value">--</b></div>
+        <div><span>浮动盈亏</span><b id="pos-pnl">--</b></div>
+        <div><span>当日盈亏</span><b id="pos-day">--</b></div>
+        <div><span>持仓标的</span><b id="pos-count">--</b></div>
+      </div>
+
+      <form class="pos-form" id="pos-form" autocomplete="off">
+        <input id="pos-code" placeholder="代码（6 位）" maxlength="6" inputmode="numeric" required>
+        <input id="pos-cost" placeholder="成本价" inputmode="decimal" required>
+        <input id="pos-shares" placeholder="股数" inputmode="numeric" required>
+        <input id="pos-date" type="date" title="建仓日期（可选）">
+        <button type="submit" class="pos-submit">添加 / 更新</button>
+        <button type="button" class="pos-clear" id="pos-clear">清空持仓</button>
+      </form>
+      <div class="pos-msg" id="pos-msg"></div>
+
+      <div class="board">
+        <table class="grid pos-grid">
+          <thead>
+            <tr>
+              <th>名称 / 代码</th>
+              <th class="col-num">市值</th>
+              <th class="col-num">浮动盈亏</th>
+              <th class="col-num">当日盈亏</th>
+              <th class="col-num">成本 / 现价</th>
+              <th class="col-num">股数</th>
+              <th class="col-num">仓位比</th>
+              <th class="col-num">止损（MA17）</th>
+              <th class="col-num">减仓（MA5）</th>
+              <th class="col-num">周线 J</th>
+              <th>建议</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="pos-tbody"></tbody>
+        </table>
+        <div class="empty" id="pos-empty">还没有持仓。在上面填代码、成本价、股数即可添加，数据只存在本机浏览器。</div>
+      </div>
+
+      <div class="pos-note">
+        止损价取 17 日线、减仓价取 5 日线，均为按实时价计算的动态值；周线 J ≥ 80 提示卖一半。
+        参考止盈：成本 +12% 减半、+20% 清仓（规格书口径），未计入交易成本。
+      </div>
+    </section>
 
     <footer class="foot">
       <span>数据来源：东方财富 push2 实时快照 + push2his 日线 ｜ 指标基准日 <b id="foot-date">--</b> ｜ 末次行情 <b id="foot-time">--</b></span>
