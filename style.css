@@ -510,6 +510,7 @@ body::before {
   font-variant-numeric: tabular-nums;
 }
 .pos-summary b.up { color: var(--up); }
+.pos-summary b.trigger { color: var(--exit); }
 .pos-summary b.down { color: var(--down); }
 
 .pos-form {
@@ -549,3 +550,15 @@ body::before {
 @media (max-width: 900px) {
   .pos-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+.tab-badge {
+  margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: 10.5px; background: rgba(240,85,91,.18); color: #ff9b9f;
+}
+.star {
+  border: 0; background: transparent; cursor: pointer;
+  color: #3a4356; font-size: 12px; padding: 0 4px 0 0; line-height: 1;
+}
+.star.on { color: #f0b429; }
+.star:hover { color: #f0b429; }
+.pos-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
