@@ -89,6 +89,8 @@ export function evaluate(rec, q) {
     scale: Number(q.scale) || 0,
     qdate,
     spark: rec.d.slice(-30),
+    // 近 30 日涨幅（用于该列排序）
+    r30: rec.d.length >= 2 ? ((price / rec.d[Math.max(0, rec.d.length - 30)]) - 1) * 100 : null,
   };
 
   if (price <= 0 || rec.w.length < MIN_WEEKS || rec.d.length < 20) {
