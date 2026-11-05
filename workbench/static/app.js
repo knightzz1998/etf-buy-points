@@ -22,6 +22,7 @@ const state = {
   indexQuotes: new Map(),
   view: "board",
   positions: [],
+  watch: new Set(),
   interval: 180,
   openCode: null,
   dedup: true,
@@ -242,6 +243,7 @@ async function refresh() {
     renderTier();
     render();
     renderPositions();
+    updatePosBadge();
   } catch (err) {
     const shown = state.quoteAt
       ? `当前显示 ${state.quoteAt.toLocaleTimeString("zh-CN", { hour12: false })} 取的快照`
@@ -336,6 +338,7 @@ function matchSignal(r) {
     case "trim": return r.signal === "trim";
     case "exit": return r.signal === "exit";
     case "near": return r.nearBuy;
+    case "watch": return state.watch.has(r.code);
     case "opportunity": return r.signal === "buy" || r.nearBuy;
     default: return true;
   }
@@ -435,7 +438,7 @@ function rowHtml(r) {
     : `<td class="col-num col-premium premium ${Math.abs(premium) >= 3 ? "warn" : ""}">${fmtPct(premium, 2)}</td>`;
   return `<tr data-code="${esc(r.code)}" class="${r.signal === "buy" ? "row-buy" : ""}">
     <td><span class="sig" data-s="${r.signal}">${SIGNAL_ICON[r.signal]} ${r.signalText}${r.nearBuy ? '<span class="near-tag">接近</span>' : ""}${gated(r) ? '<span class="gate-tag">不新开</span>' : ""}</span></td>
-    <td><div class="name-cell"><b>${esc(r.name)}</b><span>${r.code} · ${esc(r.asset)}${r.peers > 1 ? ` · <b class="peer">同类 ${r.peers}</b>` : ""}</span></div></td>
+    <td><div class="name-cell"><b><button class="star ${state.watch.has(r.code) ? "on" : ""}" data-star="${r.code}" title="加入自选">★</button>${esc(r.name)}</b><span>${r.code} · ${esc(r.asset)}${r.peers > 1 ? ` · <b class="peer">同类 ${r.peers}</b>` : ""}</span></div></td>
     <td class="col-num">${fmt(r.price)}</td>
     <td class="col-num pct ${pctCls}">${fmtPct(r.pct)}</td>
     <td class="col-num dist ${distCls}">${fmtPct(r.distMa17, 1)}</td>
@@ -723,11 +726,28 @@ function bind() {
     const btn = e.target.closest("[data-del]");
     if (btn) removePosition(btn.dataset.del);
   });
+  $("pos-export").addEventListener("click", exportPositions);
+  $("pos-import").addEventListener("click", () => $("pos-file").click());
+  $("pos-file").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) importPositions(file);
+    e.target.value = "";
+  });
   el.mask.addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeDrawer();
   });
   el.tbody.addEventListener("click", (e) => {
+    const star = e.target.closest("[data-star]");
+    if (star) {
+      e.stopPropagation();
+      const code = star.dataset.star;
+      if (state.watch.has(code)) state.watch.delete(code);
+      else state.watch.add(code);
+      saveWatch();
+      render();
+      return;
+    }
     const tr = e.target.closest("tr[data-code]");
     if (!tr) return;
     const code = tr.dataset.code;
@@ -787,6 +807,7 @@ async function boot() {
   }
   state.rows = computeRows();
   state.positions = loadPositions();
+  state.watch = loadWatch();
   renderTier();
   render();
   syncChips();
@@ -802,6 +823,7 @@ boot();
 /* ---------------- 我的持仓 ---------------- */
 
 const POS_KEY = "etf_positions_v1";
+const WATCH_KEY = "etf_watch_v1";
 const fmtMoney = (v) => (Number.isFinite(v) ? v.toLocaleString("zh-CN", { maximumFractionDigits: 1 }) : "—");
 
 function loadPositions() {
@@ -814,7 +836,20 @@ function loadPositions() {
 }
 
 function savePositions() {
-  try { localStorage.setItem(POS_KEY, JSON.stringify(state.positions)); } catch (err) { /* 隐私模式下忽略 */ }
+  try { localStorage.setItem(POS_KEY, JSON.stringify(state.positions)); } catch (err) { /* 隐私模式忽略 */ }
+}
+
+function loadWatch() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(WATCH_KEY) || "[]");
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch (err) {
+    return new Set();
+  }
+}
+
+function saveWatch() {
+  try { localStorage.setItem(WATCH_KEY, JSON.stringify([...state.watch])); } catch (err) { /* 忽略 */ }
 }
 
 function adviceFor(x) {
@@ -828,35 +863,59 @@ function adviceFor(x) {
   return [state.tier && state.tier.name !== "进攻" ? "持有（非进攻档）" : "持有", "hold"];
 }
 
-function renderPositions() {
-  if (state.view !== "positions") return;
-  const rows = state.positions.map((p) => {
+function positionRows() {
+  return state.positions.map((p) => {
     const r = state.rows.find((x) => x.code === p.code);
     const q = state.quotes.get(p.code);
     const price = (q && q.price) || (r && r.price) || 0;
     const prev = (q && q.prev) || 0;
     const value = price * p.shares;
     const pnl = (price - p.cost) * p.shares;
-    const pnlPct = p.cost > 0 ? (price / p.cost - 1) * 100 : 0;
     return {
-      p, r, q, price, value, pnl, pnlPct,
+      p, r, q, price, value, pnl,
+      pnlPct: p.cost > 0 ? (price / p.cost - 1) * 100 : 0,
       name: (r && r.name) || (q && q.name) || p.code,
       day: prev > 0 ? (price - prev) * p.shares : null,
       dayPct: q ? q.pct : null,
     };
   });
-  const totalValue = rows.reduce((s2, x) => s2 + x.value, 0);
-  const totalPnl = rows.reduce((s2, x) => s2 + x.pnl, 0);
-  const totalDay = rows.reduce((s2, x) => s2 + (x.day || 0), 0);
-  const dayPct = totalValue - totalDay > 0 ? (totalDay / (totalValue - totalDay)) * 100 : null;
+}
 
+function triggerCount(rows) {
+  return rows.filter((x) => {
+    const c = adviceFor(x)[1];
+    return c === "sell" || c === "trim";
+  }).length;
+}
+
+function updatePosBadge() {
+  const rows = positionRows();
+  const n = triggerCount(rows);
+  const b = $("pos-badge");
+  if (b) { b.hidden = n === 0; b.textContent = n; }
+  const t = $("pos-trigger");
+  if (t) {
+    t.textContent = rows.length ? `${n} 只` : "--";
+    t.className = n > 0 ? "trigger" : "";
+  }
+}
+
+function renderPositions() {
+  if (state.view !== "positions") return;
+  const rows = positionRows();
+  const totalValue = rows.reduce((a, x) => a + x.value, 0);
+  const totalPnl = rows.reduce((a, x) => a + x.pnl, 0);
+  const totalDay = rows.reduce((a, x) => a + (x.day || 0), 0);
+  const dayPct = totalValue - totalDay > 0 ? (totalDay / (totalValue - totalDay)) * 100 : null;
   const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+
   $("pos-value").textContent = rows.length ? fmtMoney(totalValue) : "--";
   $("pos-pnl").textContent = rows.length ? `${totalPnl >= 0 ? "+" : ""}${fmtMoney(totalPnl)}` : "--";
   $("pos-pnl").className = cls(totalPnl);
   $("pos-day").textContent = rows.length ? `${totalDay >= 0 ? "+" : ""}${fmtMoney(totalDay)}${dayPct == null ? "" : `  ${fmtPct(dayPct, 2)}`}` : "--";
   $("pos-day").className = cls(totalDay);
   $("pos-count").textContent = rows.length ? `${rows.length} 只` : "--";
+  updatePosBadge();
 
   $("pos-empty").hidden = rows.length > 0;
   $("pos-tbody").innerHTML = rows.map((x) => {
@@ -866,6 +925,11 @@ function renderPositions() {
     const stopDist = stop && x.price ? (stop / x.price - 1) * 100 : null;
     const trimDist = trim && x.price ? (trim / x.price - 1) * 100 : null;
     const weight = totalValue > 0 ? (x.value / totalValue) * 100 : 0;
+    const tp1 = x.p.cost * 1.12;
+    const tp2 = x.p.cost * 1.2;
+    const tp1d = x.price ? (tp1 / x.price - 1) * 100 : null;
+    const tp2d = x.price ? (tp2 / x.price - 1) * 100 : null;
+    const tpText = (v, d) => (d == null ? "—" : d <= 0 ? "已达成" : `${v.toFixed(3)} (${fmtPct(d, 1)})`);
     const pc = cls(x.pnl);
     const dc = cls(x.day ?? 0);
     return `<tr data-code="${esc(x.p.code)}">
@@ -878,11 +942,50 @@ function renderPositions() {
       <td class="col-num">${weight.toFixed(1)}%</td>
       <td class="col-num"><span class="dstack"><span>${fmt(stop)}</span><em>${stopDist == null ? "—" : fmtPct(stopDist, 1)}</em></span></td>
       <td class="col-num"><span class="dstack"><span>${fmt(trim)}</span><em>${trimDist == null ? "—" : fmtPct(trimDist, 1)}</em></span></td>
+      <td class="col-num"><span class="dstack"><span>${tpText(tp1, tp1d)}</span><em>${tpText(tp2, tp2d)}</em></span></td>
       <td class="col-num">${x.r && x.r.jLast != null ? x.r.jLast.toFixed(0) : "—"}</td>
       <td><span class="pos-advice ${advCls}">${advice}</span></td>
       <td><button class="pos-del" data-del="${esc(x.p.code)}" title="删除">×</button></td>
     </tr>`;
   }).join("");
+}
+
+function exportPositions() {
+  if (!state.positions.length) { $("pos-msg").textContent = "没有可导出的持仓"; return; }
+  const blob = new Blob([JSON.stringify(state.positions, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `etf-positions-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  $("pos-msg").textContent = `已导出 ${state.positions.length} 条持仓`;
+}
+
+function importPositions(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const list = JSON.parse(String(reader.result));
+      if (!Array.isArray(list)) throw new Error("格式不对");
+      let n = 0;
+      for (const item of list) {
+        const code = String(item.code || "").trim();
+        const cost = Number(item.cost);
+        const shares = Number(item.shares);
+        if (!/^\d{6}$/.test(code) || !(cost > 0) || !(shares > 0)) continue;
+        const exist = state.positions.find((p) => p.code === code);
+        if (exist) { exist.cost = cost; exist.shares = shares; exist.date = item.date || exist.date; }
+        else state.positions.push({ code, cost, shares, date: item.date || "" });
+        n += 1;
+      }
+      savePositions();
+      renderPositions();
+      $("pos-msg").textContent = `已导入 ${n} 条持仓`;
+    } catch (err) {
+      $("pos-msg").textContent = `导入失败：${err.message}`;
+    }
+  };
+  reader.readAsText(file);
 }
 
 function addPosition(e) {
