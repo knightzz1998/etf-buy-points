@@ -350,7 +350,7 @@ function filteredRows() {
 
 const SORT_DEFAULT_DIR = {
   signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
-  met: -1, j: 1, amount: -1, inflow: -1, premium: -1, r30: -1,
+  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, premium: -1, r30: -1,
 };
 
 function sortValue(r, key) {
@@ -365,6 +365,7 @@ function sortValue(r, key) {
     case "j": return r.jLast ?? 999;
     case "amount": return r.amount;
     case "inflow": return r.mainInflow ?? 0;
+    case "flow3": return r.flow3 ?? 0;
     case "premium": return r.premium ?? -999;
     case "r30": return r.r30 ?? -999;
     default: return 0;
@@ -413,6 +414,15 @@ function sparkColor(r) {
   return r.price >= first ? "var(--up)" : "var(--down)";
 }
 
+function flowLines(r) {
+  const items = [["3日", r.flow3], ["5日", r.flow5], ["10日", r.flow10]];
+  if (items.every(([, v]) => v == null)) return '<span class="dash">—</span>';
+  return items.map(([label, v]) => {
+    const c = v > 0 ? "pos" : v < 0 ? "neg" : "dash";
+    return `<span class="${c}">${label} ${fmtInflow(v)}</span>`;
+  }).join("<br>");
+}
+
 function condTags(r) {
   const c = r.cond;
   const item = (on, text) => `<i class="${on ? "on" : ""}">${text}</i>`;
@@ -447,6 +457,7 @@ function rowHtml(r) {
     <td class="col-num"><span class="jcell ${jCls}"><b>${r.jLast == null ? "—" : r.jLast.toFixed(0)}</b><span>谷 ${r.jMin6 == null ? "—" : r.jMin6.toFixed(0)}</span></span></td>
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
     <td class="col-num col-inflow inflow ${(r.mainInflow ?? 0) > 0 ? "pos" : (r.mainInflow ?? 0) < 0 ? "neg" : ""}">${fmtInflow(r.mainInflow)}</td>
+    <td class="col-num col-flow flowcell">${flowLines(r)}</td>
     ${premiumCell}
     <td class="col-spark spark">${sparkline(r.spark, { color: sparkColor(r) })}</td>
   </tr>`;
@@ -559,6 +570,8 @@ function renderDrawer() {
   const pctCls = r.pct > 0 ? "up" : r.pct < 0 ? "down" : "";
   const premiumWarn = r.premium != null && r.premium >= 3;
   const reasonCls = premiumWarn || r.signal === "exit" ? "reason warn" : "reason";
+  const trendCls = r.trendLabel === "强势" || r.trendLabel === "偏强" ? "up"
+    : r.trendLabel === "偏弱" || r.trendLabel === "走弱" ? "down" : "flat";
   const tierName = state.tier ? state.tier.name : null;
   const openSignal = r.signal === "buy" || r.signal === "add";
   const tierAction = !tierName
@@ -598,6 +611,22 @@ function renderDrawer() {
     <div class="dw-sec">
       <h3>近 30 个交易日</h3>
       <div class="dw-chart">${chartSvg(r)}</div>
+    </div>
+
+    <div class="dw-sec">
+      <h3>趋势分析</h3>
+      <div class="trend-head">
+        <span class="trend-badge ${trendCls}">${r.trendLabel || "—"}</span>
+        <b>${r.trendScore == null ? "—" : r.trendScore}</b>
+        <span class="dw-sub">/ 100</span>
+      </div>
+      <div class="trend-bar"><i class="${trendCls}" style="width:${r.trendScore || 0}%"></i></div>
+      <div class="trend-lines">
+        <div><span>均线排列</span><b>${r.order === "—" || !r.order ? "数据不足" : `${r.order}（MA5/17/20/60）`}</b></div>
+        <div><span>20 日线方向</span><b>${r.ma20Slope == null ? "—" : `${r.ma20Slope > 0 ? "向上" : r.ma20Slope < 0 ? "向下" : "走平"} ${fmtPct(r.ma20Slope, 2)}（5日）`}</b></div>
+        <div><span>60 日位置</span><b>${r.pos60 == null ? "—" : `${r.pos60.toFixed(0)}% ｜ 距高 ${fmtPct(r.distHigh, 1)}`}</b></div>
+        <div><span>资金 3/5/10 日</span><b>${fmtInflow(r.flow3)} / ${fmtInflow(r.flow5)} / ${fmtInflow(r.flow10)}</b></div>
+      </div>
     </div>
 
     <div class="dw-sec">

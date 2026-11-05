@@ -262,8 +262,9 @@ body::before {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
-  overflow: hidden;
+  overflow-x: auto;
 }
+.grid { min-width: 1320px; }
 
 .grid { width: 100%; border-collapse: collapse; }
 
@@ -567,3 +568,24 @@ body::before {
 .flowcell .pos { color: var(--up); }
 .flowcell .neg { color: var(--down); }
 .flowcell .dash { color: var(--dim); }
+
+.trend-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.trend-badge { padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--line); }
+.trend-badge.up { color: var(--up); border-color: rgba(255,91,91,.35); background: rgba(255,91,91,.08); }
+.trend-badge.down { color: var(--down); border-color: rgba(34,197,139,.35); background: rgba(34,197,139,.08); }
+.trend-badge.flat { color: var(--muted); }
+.trend-head b { font-family: var(--mono); font-size: 20px; }
+.trend-bar { height: 5px; border-radius: 3px; background: #1b2130; overflow: hidden; margin-bottom: 10px; }
+.trend-bar i { display: block; height: 100%; border-radius: 3px; }
+.trend-bar i.up { background: linear-gradient(90deg, #7a2f38, #ff5b5b); }
+.trend-bar i.down { background: linear-gradient(90deg, #1d5c47, #22c58b); }
+.trend-bar i.flat { background: #3a4356; }
+.trend-lines { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--line-soft); border-radius: 9px; overflow: hidden; }
+.trend-lines div {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; background: var(--panel);
+  border-bottom: 1px solid var(--line-soft); font-size: 12px;
+}
+.trend-lines div:last-child { border-bottom: 0; }
+.trend-lines span { color: var(--dim); white-space: nowrap; }
+.trend-lines b { font-family: var(--mono); font-weight: 500; font-size: 11.5px; color: var(--muted); text-align: right; }

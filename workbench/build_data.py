@@ -34,6 +34,8 @@ DIST_DATA = ROOT / "dist" / "data"
 
 SPOT_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+FLOW_URL = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get"
+FLOW_CACHE = PROJECT / "data" / "flow_cache.json"
 HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}
 SPOT_FIELDS = "f12,f13,f14,f2,f3,f5,f6,f8,f10,f62,f402,f124,f297"
 DAILY_KEEP = 60
@@ -180,6 +182,54 @@ def fetch_kline(code: str) -> list[list]:
     return rows
 
 
+def secid(code: str) -> str:
+    return ("1." if code.startswith(("5", "6", "9")) else "0.") + code
+
+
+def fetch_flow(code: str) -> dict | None:
+    params = {"lmt": 15, "klt": 101, "secid": secid(code),
+              "fields1": "f1,f2,f3,f7", "fields2": "f51,f52"}
+    data = requests.get(FLOW_URL, params=params, headers=HEADERS, timeout=15).json().get("data") or {}
+    vals = [float(line.split(",")[1]) for line in (data.get("klines") or [])]
+    if not vals:
+        return None
+    return {"s3": sum(vals[-3:]), "s5": sum(vals[-5:]), "s10": sum(vals[-10:])}
+
+
+def load_flow(codes: list[str], qdate: str, force: bool) -> dict:
+    """每日主力净流入 3/5/10 日累计，按行情日期缓存。"""
+    cache = {}
+    if FLOW_CACHE.exists() and not force:
+        try:
+            cache = json.loads(FLOW_CACHE.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            cache = {}
+    todo = [c for c in codes if cache.get(c, {}).get("date") != qdate]
+    if todo:
+        print(f"[资金流] 需更新 {len(todo)} 只", flush=True)
+        done, lock = 0, threading.Lock()
+
+        def work(code):
+            nonlocal done
+            try:
+                flow = fetch_flow(code)
+            except (requests.RequestException, ValueError):
+                flow = None
+            with lock:
+                done += 1
+                if done % 200 == 0 or done == len(todo):
+                    print(f"      {done}/{len(todo)}", flush=True)
+            return code, flow
+
+        with ThreadPoolExecutor(max_workers=12) as ex:
+            for code, flow in ex.map(work, todo):
+                if flow:
+                    cache[code] = {"date": qdate, **flow}
+    FLOW_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    FLOW_CACHE.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    return cache
+
+
 def cache_path(code: str) -> Path:
     return CACHE_DIR / f"{code}.csv"
 
@@ -295,6 +345,7 @@ def build(force: bool = False) -> Path:
     hist = load_history(items, qdate, force)
 
     print("[3/3] 聚合周线与近 60 日收盘…", flush=True)
+    flows = load_flow([it["code"] for it in items], qdate, force)
     codes = []
     skipped = 0
     for it in items:
@@ -314,6 +365,9 @@ def build(force: bool = False) -> Path:
             "w": [[round(b[0], 4), round(b[1], 4), round(b[2], 4)] for b in weekly],
             "ds": rows[-1][0][:10],
             "ws": week_key(rows[-1][0]),
+            "f3": round(flows.get(it["code"], {}).get("s3", 0.0), 1),
+            "f5": round(flows.get(it["code"], {}).get("s5", 0.0), 1),
+            "f10": round(flows.get(it["code"], {}).get("s10", 0.0), 1),
         })
 
     print("      拉取指数日线（上证 / 创业板）", flush=True)
