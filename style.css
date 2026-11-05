@@ -562,3 +562,8 @@ body::before {
 .star.on { color: #f0b429; }
 .star:hover { color: #f0b429; }
 .pos-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+.flowcell { line-height: 1.55; }
+.flowcell .pos { color: var(--up); }
+.flowcell .neg { color: var(--down); }
+.flowcell .dash { color: var(--dim); }

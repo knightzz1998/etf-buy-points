@@ -822,6 +822,36 @@ boot();
 
 /* ---------------- 我的持仓 ---------------- */
 
+const FLOW_URL = "https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get";
+const flowCache = new Map();
+
+function secidOf(code) {
+  return (code.startsWith("5") || code.startsWith("6") || code.startsWith("9") ? "1." : "0.") + code;
+}
+
+async function loadFlows(codes) {
+  const now = Date.now();
+  const need = codes.filter((c) => !flowCache.has(c) || now - flowCache.get(c).at > 300000);
+  if (!need.length) return 0;
+  await Promise.all(need.map(async (code) => {
+    try {
+      const params = new URLSearchParams({
+        lmt: "15", klt: "101", secid: secidOf(code),
+        fields1: "f1,f2,f3,f7", fields2: "f51,f52,f53,f54,f55",
+      });
+      const res = await fetch(`${FLOW_URL}?${params}`, { credentials: "omit" });
+      const json = await res.json();
+      const klines = (json && json.data && json.data.klines) || [];
+      const vals = klines.map((l) => Number(l.split(",")[1]) || 0);
+      const sum = (n) => vals.slice(-n).reduce((a, b) => a + b, 0);
+      flowCache.set(code, { s3: sum(3), s5: sum(5), s10: sum(10), days: vals.length, at: Date.now() });
+    } catch (err) {
+      flowCache.set(code, { error: true, at: Date.now() });
+    }
+  }));
+  return need.length;
+}
+
 const POS_KEY = "etf_positions_v1";
 const WATCH_KEY = "etf_watch_v1";
 const fmtMoney = (v) => (Number.isFinite(v) ? v.toLocaleString("zh-CN", { maximumFractionDigits: 1 }) : "—");
@@ -940,6 +970,7 @@ function renderPositions() {
       <td class="col-num"><span class="dstack"><span>${x.p.cost.toFixed(3)}</span><em>${fmt(x.price)}</em></span></td>
       <td class="col-num">${x.p.shares.toLocaleString("zh-CN")}</td>
       <td class="col-num">${weight.toFixed(1)}%</td>
+      <td class="col-num flowcell">${flowCell(x.p.code)}</td>
       <td class="col-num"><span class="dstack"><span>${fmt(stop)}</span><em>${stopDist == null ? "—" : fmtPct(stopDist, 1)}</em></span></td>
       <td class="col-num"><span class="dstack"><span>${fmt(trim)}</span><em>${trimDist == null ? "—" : fmtPct(trimDist, 1)}</em></span></td>
       <td class="col-num"><span class="dstack"><span>${tpText(tp1, tp1d)}</span><em>${tpText(tp2, tp2d)}</em></span></td>
@@ -948,6 +979,22 @@ function renderPositions() {
       <td><button class="pos-del" data-del="${esc(x.p.code)}" title="删除">×</button></td>
     </tr>`;
   }).join("");
+
+  // 资金流：补齐缺失后重绘一次
+  loadFlows(rows.map((x) => x.p.code)).then((n) => {
+    if (n && state.view === "positions") renderPositions();
+  });
+}
+
+function flowCell(code) {
+  const f = flowCache.get(code);
+  if (!f) return '<span class="dash">读取中…</span>';
+  if (f.error) return '<span class="dash">—</span>';
+  const line = (label, v) => {
+    const c = v > 0 ? "pos" : v < 0 ? "neg" : "dash";
+    return `<span class="${c}">${label} ${fmtInflow(v)}</span>`;
+  };
+  return [line("3日", f.s3), line("5日", f.s5), line("10日", f.s10)].join("<br>");
 }
 
 function exportPositions() {
