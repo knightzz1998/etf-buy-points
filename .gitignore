@@ -6,7 +6,7 @@ __pycache__/
 *.py[cod]
 
 # 本地数据缓存（行情日线、模拟盘记录）
-data/
+/data/
 
 # macOS / IDE
 .DS_Store
