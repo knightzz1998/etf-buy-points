@@ -280,6 +280,14 @@ body::before {
   white-space: nowrap;
 }
 .grid thead th.col-num { text-align: right; }
+.grid thead th.sortable { cursor: pointer; user-select: none; transition: color .12s; }
+.grid thead th.sortable:hover { color: var(--text); }
+.grid thead th.sorted { color: var(--accent, #cfd8ea); }
+.grid thead th[data-dir="desc"]::after { content: " ↓"; color: var(--add); }
+.grid thead th[data-dir="asc"]::after { content: " ↑"; color: var(--add); }
+
+.inflow.pos { color: var(--up); }
+.inflow.neg { color: var(--down); }
 
 .grid tbody tr {
   border-bottom: 1px solid var(--line-soft);
@@ -468,6 +476,7 @@ body::before {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid thead .col-cond, .grid tbody .col-cond,
   .grid thead .col-spark, .grid tbody .col-spark,
-  .grid thead .col-premiumcell, .grid tbody .col-premiumcell { display: none; }
+  .grid thead .col-premium, .grid tbody .col-premium,
+  .grid thead .col-inflow, .grid tbody .col-inflow { display: none; }
   .counter { width: 100%; margin-left: 0; }
 }

@@ -16,7 +16,8 @@ const state = {
   asset: "all",
   minAmount: 10000000,
   search: "",
-  sort: "strength",
+  sortKey: "dist20",
+  sortDir: -1,
   tier: null,
   indexQuotes: new Map(),
   interval: 180,
@@ -50,6 +51,13 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
 
 const fmt = (v, digits = 3) => (v == null || !Number.isFinite(v) ? "—" : v.toFixed(digits));
 const fmtPct = (v, digits = 2) => (v == null || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`);
+const fmtInflow = (v) => {
+  if (!v) return "—";
+  const abs = Math.abs(v);
+  const body = abs >= 1e8 ? `${(abs / 1e8).toFixed(2)} 亿` : `${(abs / 1e4).toFixed(0)} 万`;
+  return (v > 0 ? "+" : "-") + body;
+};
+
 const fmtAmount = (v) => {
   if (!v) return "—";
   if (v >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`;
@@ -333,15 +341,48 @@ function filteredRows() {
   return state.rows.filter((r) => matchBase(r) && matchSignal(r));
 }
 
-const COMPARATORS = {
-  strength: (a, b) => (b.strength ?? -99) - (a.strength ?? -99),
-  signal: (a, b) => (SIGNAL_ORDER[a.signal] - SIGNAL_ORDER[b.signal]) || ((b.strength ?? -99) - (a.strength ?? -99)),
-  score: (a, b) => b.score - a.score,
-  dist: (a, b) => Math.abs(a.distMa17 ?? 999) - Math.abs(b.distMa17 ?? 999),
-  j: (a, b) => (a.jLast ?? 999) - (b.jLast ?? 999),
-  amount: (a, b) => b.amount - a.amount,
-  pct: (a, b) => b.pct - a.pct,
+const SORT_DEFAULT_DIR = {
+  signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
+  met: -1, j: 1, amount: -1, inflow: -1, premium: -1, r30: -1,
 };
+
+function sortValue(r, key) {
+  switch (key) {
+    case "signal": return SIGNAL_ORDER[r.signal] ?? 9;
+    case "name": return r.name;
+    case "price": return r.price;
+    case "pct": return r.pct;
+    case "dist17": return r.distMa17 ?? -999;
+    case "dist20": return r.distMa20 ?? -999;
+    case "met": return r.met;
+    case "j": return r.jLast ?? 999;
+    case "amount": return r.amount;
+    case "inflow": return r.mainInflow ?? 0;
+    case "premium": return r.premium ?? -999;
+    case "r30": return r.r30 ?? -999;
+    default: return 0;
+  }
+}
+
+function applySort(list) {
+  const key = state.sortKey;
+  const dir = state.sortDir;
+  list.sort((a, b) => {
+    const va = sortValue(a, key);
+    const vb = sortValue(b, key);
+    let c = typeof va === "string" ? va.localeCompare(vb, "zh-CN") : (va - vb);
+    if (c === 0) c = (b.strength ?? -99) - (a.strength ?? -99);
+    return c * dir;
+  });
+}
+
+function renderSortIndicators() {
+  document.querySelectorAll(".grid thead th[data-key]").forEach((th) => {
+    const on = th.dataset.key === state.sortKey;
+    th.classList.toggle("sorted", on);
+    th.dataset.dir = on ? (state.sortDir > 0 ? "asc" : "desc") : "";
+  });
+}
 
 function sparkline(values, { width = 88, height = 26, color } = {}) {
   if (!values || values.length < 2) return "";
@@ -393,10 +434,12 @@ function rowHtml(r) {
     <td><div class="name-cell"><b>${esc(r.name)}</b><span>${r.code} · ${esc(r.asset)}${r.peers > 1 ? ` · <b class="peer">同类 ${r.peers}</b>` : ""}</span></div></td>
     <td class="col-num">${fmt(r.price)}</td>
     <td class="col-num pct ${pctCls}">${fmtPct(r.pct)}</td>
-    <td class="col-num dist"><span class="dstack"><span class="${distCls}">${fmtPct(r.distMa17, 1)}</span><em>20日 ${fmtPct(r.distMa20, 1)}</em></span></td>
+    <td class="col-num dist ${distCls}">${fmtPct(r.distMa17, 1)}</td>
+    <td class="col-num dist ${(r.distMa20 ?? 0) > 0 ? "pos" : "neg"}">${fmtPct(r.distMa20, 1)}</td>
     <td class="col-cond">${condTags(r)}</td>
     <td class="col-num"><span class="jcell ${jCls}"><b>${r.jLast == null ? "—" : r.jLast.toFixed(0)}</b><span>谷 ${r.jMin6 == null ? "—" : r.jMin6.toFixed(0)}</span></span></td>
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
+    <td class="col-num col-inflow inflow ${(r.mainInflow ?? 0) > 0 ? "pos" : (r.mainInflow ?? 0) < 0 ? "neg" : ""}">${fmtInflow(r.mainInflow)}</td>
     ${premiumCell}
     <td class="col-spark spark">${sparkline(r.spark, { color: sparkColor(r) })}</td>
   </tr>`;
@@ -423,7 +466,8 @@ function render() {
   renderStats();
   const raw = filteredRows();
   const list = state.dedup ? dedupByGroup(raw) : raw;
-  list.sort(COMPARATORS[state.sort] || COMPARATORS.signal);
+  applySort(list);
+  renderSortIndicators();
   const poolSize = state.rows.filter(matchBase).length;
   el.resultCount.textContent = `${list.length} / ${poolSize} 只${state.poolOnly ? "（策略池）" : ""}${state.dedup ? "（同赛道去重）" : ""}`;
   if (!list.length) {
@@ -634,8 +678,16 @@ function bind() {
     state.minAmount = Number(e.target.value);
     render();
   });
-  $("sort").addEventListener("change", (e) => {
-    state.sort = e.target.value;
+  document.querySelector(".grid thead").addEventListener("click", (e) => {
+    const th = e.target.closest("th[data-key]");
+    if (!th) return;
+    const key = th.dataset.key;
+    if (state.sortKey === key) {
+      state.sortDir = -state.sortDir;
+    } else {
+      state.sortKey = key;
+      state.sortDir = SORT_DEFAULT_DIR[key] ?? -1;
+    }
     render();
   });
   $("dedup").addEventListener("change", (e) => {

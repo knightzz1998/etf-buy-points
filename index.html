@@ -79,18 +79,6 @@
           </select>
         </label>
         <label class="select">
-          <span>排序</span>
-          <select id="sort">
-            <option value="strength">趋势强度（距MA20）</option>
-            <option value="signal">信号优先</option>
-            <option value="score">综合分</option>
-            <option value="dist">距 17 日线</option>
-            <option value="j">周线 J</option>
-            <option value="amount">成交额</option>
-            <option value="pct">涨跌幅</option>
-          </select>
-        </label>
-        <label class="select">
           <span>自动刷新</span>
           <select id="interval">
             <option value="30">30 秒</option>
@@ -114,16 +102,18 @@
       <table class="grid">
         <thead>
           <tr>
-            <th class="col-signal">信号</th>
-            <th class="col-name">名称 / 代码</th>
-            <th class="col-num">现价</th>
-            <th class="col-num">涨跌幅</th>
-            <th class="col-num">距 17 / 20 日线</th>
-            <th class="col-cond">四项条件</th>
-            <th class="col-num">周线 J</th>
-            <th class="col-num">成交额</th>
-            <th class="col-num">溢价</th>
-            <th class="col-spark">近 30 日</th>
+            <th class="col-signal sortable" data-key="signal">信号</th>
+            <th class="col-name sortable" data-key="name">名称 / 代码</th>
+            <th class="col-num sortable" data-key="price">现价</th>
+            <th class="col-num sortable" data-key="pct">涨跌幅</th>
+            <th class="col-num sortable" data-key="dist17">距 17 日线</th>
+            <th class="col-num sortable" data-key="dist20">距 20 日线</th>
+            <th class="col-cond sortable" data-key="met">四项条件</th>
+            <th class="col-num sortable" data-key="j">周线 J</th>
+            <th class="col-num sortable" data-key="amount">成交额</th>
+            <th class="col-num col-inflow sortable" data-key="inflow">主力净流入</th>
+            <th class="col-num col-premium sortable" data-key="premium">溢价</th>
+            <th class="col-spark sortable" data-key="r30">近 30 日</th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
