@@ -480,3 +480,72 @@ body::before {
   .grid thead .col-inflow, .grid tbody .col-inflow { display: none; }
   .counter { width: 100%; margin-left: 0; }
 }
+
+/* ---------- 视图切换与持仓 ---------- */
+.tabs {
+  display: flex; gap: 4px; padding-bottom: 2px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.tab {
+  padding: 8px 16px; border: 0; background: transparent;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -3px;
+  transition: color .12s, border-color .12s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--add); }
+
+.view { display: flex; flex-direction: column; gap: 14px; }
+.view[hidden] { display: none; }
+
+.pos-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.pos-summary > div {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+}
+.pos-summary span { font-size: 11.5px; color: var(--muted); }
+.pos-summary b {
+  font-family: var(--mono); font-size: 22px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pos-summary b.up { color: var(--up); }
+.pos-summary b.down { color: var(--down); }
+
+.pos-form {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel);
+}
+.pos-form input {
+  padding: 8px 10px; width: 132px;
+  border-radius: 8px; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--text);
+  font-size: 12.5px; outline: none;
+}
+.pos-form input:focus { border-color: #38507a; }
+.pos-form .pos-submit {
+  padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  border: 1px solid rgba(79,140,255,.42); background: rgba(79,140,255,.14); color: #cfe0ff;
+}
+.pos-form .pos-clear {
+  padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+}
+.pos-form .pos-clear:hover { color: var(--exit); border-color: rgba(240,85,91,.4); }
+.pos-msg { font-size: 11.5px; color: var(--trim); min-height: 16px; }
+
+.pos-advice { font-size: 12px; white-space: nowrap; }
+.pos-advice.hold { color: var(--muted); }
+.pos-advice.trim { color: var(--trim); }
+.pos-advice.sell { color: var(--exit); }
+.pos-del {
+  border: 0; background: transparent; color: var(--dim);
+  cursor: pointer; font-size: 15px; line-height: 1;
+}
+.pos-del:hover { color: var(--exit); }
+.pos-note { color: var(--dim); font-size: 11px; line-height: 1.8; }
+
+@media (max-width: 900px) {
+  .pos-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

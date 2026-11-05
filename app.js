@@ -4,7 +4,7 @@ const SPOT_URL = "https://push2.eastmoney.com/api/qt/clist/get";
 const IDX_URL = "https://push2.eastmoney.com/api/qt/ulist.np/get";
 const IDX_SECIDS = "1.000001,0.399006";
 const FS = "b:MK0021,b:MK0022,b:MK0023,b:MK0024,b:MK0827";
-const FIELDS = "f12,f2,f3,f6,f8,f10,f15,f16,f17,f18,f21,f62,f402,f124,f297";
+const FIELDS = "f12,f14,f2,f3,f6,f8,f10,f15,f16,f17,f18,f21,f62,f402,f124,f297";
 const PAGE_SIZE = 100;
 const CONCURRENCY = 4;
 
@@ -20,6 +20,8 @@ const state = {
   sortDir: 1,
   tier: null,
   indexQuotes: new Map(),
+  view: "board",
+  positions: [],
   interval: 180,
   openCode: null,
   dedup: true,
@@ -190,6 +192,7 @@ function normalizeQuote(r) {
   const date = raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6)}` : "";
   const hasPremium = r.f402 !== "-" && r.f402 != null;
   return {
+    name: String(r.f14 || ""),
     price: num(r.f2), pct: num(r.f3), amount: num(r.f6), turnover: num(r.f8), liangbi: num(r.f10),
     scale: num(r.f21),
     high: num(r.f15), low: num(r.f16), open: num(r.f17), prev: num(r.f18),
@@ -238,6 +241,7 @@ async function refresh() {
     updateClock(maxTs);
     renderTier();
     render();
+    renderPositions();
   } catch (err) {
     const shown = state.quoteAt
       ? `当前显示 ${state.quoteAt.toLocaleTimeString("zh-CN", { hour12: false })} 取的快照`
@@ -704,6 +708,21 @@ function bind() {
     updateCounter();
   });
   el.refreshBtn.addEventListener("click", () => refresh());
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.addEventListener("click", () => setView(t.dataset.view));
+  });
+  $("pos-form").addEventListener("submit", addPosition);
+  $("pos-clear").addEventListener("click", () => {
+    if (state.positions.length && confirm("清空全部持仓？")) {
+      state.positions = [];
+      savePositions();
+      renderPositions();
+    }
+  });
+  $("pos-tbody").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-del]");
+    if (btn) removePosition(btn.dataset.del);
+  });
   el.mask.addEventListener("click", closeDrawer);
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeDrawer();
@@ -767,6 +786,7 @@ async function boot() {
     return;
   }
   state.rows = computeRows();
+  state.positions = loadPositions();
   renderTier();
   render();
   syncChips();
@@ -777,3 +797,127 @@ async function boot() {
 }
 
 boot();
+
+
+/* ---------------- 我的持仓 ---------------- */
+
+const POS_KEY = "etf_positions_v1";
+const fmtMoney = (v) => (Number.isFinite(v) ? v.toLocaleString("zh-CN", { maximumFractionDigits: 1 }) : "—");
+
+function loadPositions() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(POS_KEY) || "[]");
+    return Array.isArray(raw) ? raw.filter((x) => x && x.code) : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function savePositions() {
+  try { localStorage.setItem(POS_KEY, JSON.stringify(state.positions)); } catch (err) { /* 隐私模式下忽略 */ }
+}
+
+function adviceFor(x) {
+  if (!x.r || x.r.ma17 == null) return ["无指标", ""];
+  const pnlPct = x.pnlPct;
+  if (x.price < x.r.ma17) return ["破 17 日线 · 次日离场", "sell"];
+  if (pnlPct >= 20) return ["浮盈 ≥20% · 清仓", "trim"];
+  if (pnlPct >= 12) return ["浮盈 ≥12% · 卖一半", "trim"];
+  if (x.r.jLast != null && x.r.jLast >= 80) return ["周线 J ≥80 · 卖一半", "trim"];
+  if (x.r.ma5 != null && x.price < x.r.ma5) return ["破 5 日线 · 减仓", "trim"];
+  return [state.tier && state.tier.name !== "进攻" ? "持有（非进攻档）" : "持有", "hold"];
+}
+
+function renderPositions() {
+  if (state.view !== "positions") return;
+  const rows = state.positions.map((p) => {
+    const r = state.rows.find((x) => x.code === p.code);
+    const q = state.quotes.get(p.code);
+    const price = (q && q.price) || (r && r.price) || 0;
+    const prev = (q && q.prev) || 0;
+    const value = price * p.shares;
+    const pnl = (price - p.cost) * p.shares;
+    const pnlPct = p.cost > 0 ? (price / p.cost - 1) * 100 : 0;
+    return {
+      p, r, q, price, value, pnl, pnlPct,
+      name: (r && r.name) || (q && q.name) || p.code,
+      day: prev > 0 ? (price - prev) * p.shares : null,
+      dayPct: q ? q.pct : null,
+    };
+  });
+  const totalValue = rows.reduce((s2, x) => s2 + x.value, 0);
+  const totalPnl = rows.reduce((s2, x) => s2 + x.pnl, 0);
+  const totalDay = rows.reduce((s2, x) => s2 + (x.day || 0), 0);
+  const dayPct = totalValue - totalDay > 0 ? (totalDay / (totalValue - totalDay)) * 100 : null;
+
+  const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+  $("pos-value").textContent = rows.length ? fmtMoney(totalValue) : "--";
+  $("pos-pnl").textContent = rows.length ? `${totalPnl >= 0 ? "+" : ""}${fmtMoney(totalPnl)}` : "--";
+  $("pos-pnl").className = cls(totalPnl);
+  $("pos-day").textContent = rows.length ? `${totalDay >= 0 ? "+" : ""}${fmtMoney(totalDay)}${dayPct == null ? "" : `  ${fmtPct(dayPct, 2)}`}` : "--";
+  $("pos-day").className = cls(totalDay);
+  $("pos-count").textContent = rows.length ? `${rows.length} 只` : "--";
+
+  $("pos-empty").hidden = rows.length > 0;
+  $("pos-tbody").innerHTML = rows.map((x) => {
+    const [advice, advCls] = adviceFor(x);
+    const stop = x.r ? x.r.ma17 : null;
+    const trim = x.r ? x.r.ma5 : null;
+    const stopDist = stop && x.price ? (stop / x.price - 1) * 100 : null;
+    const trimDist = trim && x.price ? (trim / x.price - 1) * 100 : null;
+    const weight = totalValue > 0 ? (x.value / totalValue) * 100 : 0;
+    const pc = cls(x.pnl);
+    const dc = cls(x.day ?? 0);
+    return `<tr data-code="${esc(x.p.code)}">
+      <td><div class="name-cell"><b>${esc(x.name)}</b><span>${x.p.code}${x.p.date ? ` · ${esc(x.p.date)}` : ""}</span></div></td>
+      <td class="col-num">${fmtMoney(x.value)}</td>
+      <td class="col-num ${pc}"><span class="dstack"><span>${x.pnl >= 0 ? "+" : ""}${x.pnl.toFixed(1)}</span><em>${fmtPct(x.pnlPct, 2)}</em></span></td>
+      <td class="col-num ${dc}"><span class="dstack"><span>${x.day == null ? "—" : `${x.day >= 0 ? "+" : ""}${x.day.toFixed(1)}`}</span><em>${fmtPct(x.dayPct, 2)}</em></span></td>
+      <td class="col-num"><span class="dstack"><span>${x.p.cost.toFixed(3)}</span><em>${fmt(x.price)}</em></span></td>
+      <td class="col-num">${x.p.shares.toLocaleString("zh-CN")}</td>
+      <td class="col-num">${weight.toFixed(1)}%</td>
+      <td class="col-num"><span class="dstack"><span>${fmt(stop)}</span><em>${stopDist == null ? "—" : fmtPct(stopDist, 1)}</em></span></td>
+      <td class="col-num"><span class="dstack"><span>${fmt(trim)}</span><em>${trimDist == null ? "—" : fmtPct(trimDist, 1)}</em></span></td>
+      <td class="col-num">${x.r && x.r.jLast != null ? x.r.jLast.toFixed(0) : "—"}</td>
+      <td><span class="pos-advice ${advCls}">${advice}</span></td>
+      <td><button class="pos-del" data-del="${esc(x.p.code)}" title="删除">×</button></td>
+    </tr>`;
+  }).join("");
+}
+
+function addPosition(e) {
+  e.preventDefault();
+  const code = $("pos-code").value.trim();
+  const cost = Number($("pos-cost").value);
+  const shares = Number($("pos-shares").value);
+  const date = $("pos-date").value;
+  const msg = $("pos-msg");
+  if (!/^\d{6}$/.test(code)) { msg.textContent = "代码需为 6 位数字"; return; }
+  if (!(cost > 0) || !(shares > 0)) { msg.textContent = "成本和股数需大于 0"; return; }
+  const exist = state.positions.find((p) => p.code === code);
+  if (exist) {
+    exist.cost = cost;
+    exist.shares = shares;
+    if (date) exist.date = date;
+  } else {
+    state.positions.push({ code, cost, shares, date: date || "" });
+  }
+  savePositions();
+  msg.textContent = `已${exist ? "更新" : "添加"} ${code}`;
+  e.target.reset();
+  renderPositions();
+}
+
+function removePosition(code) {
+  state.positions = state.positions.filter((p) => p.code !== code);
+  savePositions();
+  renderPositions();
+}
+
+function setView(view) {
+  state.view = view;
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
+  $("view-board").hidden = view !== "board";
+  $("view-positions").hidden = view !== "positions";
+  if (view === "positions") renderPositions();
+}
