@@ -610,3 +610,11 @@ body::before {
 .ma-badge.flat { color: var(--muted); }
 
 .macell em { font-style: normal; margin-left: 4px; font-size: 10px; color: var(--dim); }
+
+.hold-toggle {
+  padding: 3px 9px; border-radius: 999px; cursor: pointer;
+  font-size: 11px; border: 1px solid var(--line);
+  background: transparent; color: var(--dim); white-space: nowrap;
+}
+.hold-toggle:hover { color: var(--text); border-color: #2f394b; }
+.hold-toggle.on { color: #f0b429; border-color: rgba(240,180,41,.4); background: rgba(240,180,41,.08); }
