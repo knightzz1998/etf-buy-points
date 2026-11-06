@@ -216,6 +216,13 @@ def board_group(name: str) -> str:
 
 # ---------- 主流程 ----------
 
+def _num(v, default=0.0):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def build_pool(base: dict, live: dict) -> list:
     pool = []
     for rec in base["codes"]:
@@ -223,9 +230,9 @@ def build_pool(base: dict, live: dict) -> list:
         r = live.get(code)
         if not r or rec["a"] not in ("宽基", "行业主题"):
             continue
-        if (r.get("f21") or 0) < 1e9 or (r.get("f6") or 0) < 1e7:
+        if _num(r.get("f21")) < 1e9 or _num(r.get("f6")) < 1e7:
             continue
-        pm = None if r.get("f402") in (None, "-") else -r["f402"]
+        pm = None if r.get("f402") in (None, "-") else -_num(r["f402"])
         if pm is not None and pm > 3:
             continue
         g = board_group(rec["n"])
