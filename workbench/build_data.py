@@ -428,6 +428,166 @@ def weekly_bars(rows: list[list]) -> list[list]:
     return bars
 
 
+STOCK_CACHE = PROJECT / "data" / "stock_hist_cache"
+SBL3_POOL = PROJECT / "data" / "sbl3_pool.json"
+MAIN_BOARD = ("600", "601", "603", "605", "000", "001", "002", "003")
+
+
+def fetch_stock_universe() -> list[dict]:
+    """沪深主板 A 股（排除创业板/科创板/北交所/ST）。"""
+    url = "https://push2.eastmoney.com/api/qt/clist/get"
+    params = {"pn": 1, "pz": 100, "po": 1, "np": 1, "fltt": 2, "invt": 2, "fid": "f12",
+              "fs": "m:1+t:2,m:1+t:23,m:0+t:6,m:0+t:80", "fields": "f12,f14,f2"}
+    first = requests.get(url, params=params, headers=HEADERS, timeout=20).json()["data"]
+    pages = (int(first["total"]) + 99) // 100
+    rows = list(first.get("diff") or [])
+
+    def page(pn):
+        p2 = dict(params, pn=pn)
+        return requests.get(url, params=p2, headers=HEADERS, timeout=20).json().get("data", {}).get("diff") or []
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for part in ex.map(page, range(2, pages + 1)):
+            rows.extend(part)
+    out = []
+    for r in rows:
+        code = str(r.get("f12") or "")
+        name = str(r.get("f14") or "")
+        if not code.startswith(MAIN_BOARD):
+            continue
+        if "ST" in name.upper() or "退" in name:
+            continue
+        out.append({"code": code, "name": name})
+    return out
+
+
+def stock_rows(code: str, qdate: str, force: bool) -> list[list] | None:
+    """个股日线缓存（约 1 年），缺则补抓。"""
+    STOCK_CACHE.mkdir(parents=True, exist_ok=True)
+    f = STOCK_CACHE / f"{code}.csv"
+    if not force and f.exists():
+        try:
+            rows = []
+            with f.open(encoding="utf-8") as fh:
+                next(fh, None)
+                for line in fh:
+                    p = line.strip().split(",")
+                    if len(p) >= 6:
+                        rows.append([p[0], float(p[1]), float(p[2]), float(p[3]), float(p[4]), float(p[5])])
+            if rows and (dt.date.fromisoformat(qdate) - dt.date.fromisoformat(rows[-1][0][:10])).days <= 4:
+                return rows
+        except (OSError, ValueError):
+            pass
+    beg = (dt.date.today() - dt.timedelta(days=420)).strftime("%Y%m%d")
+    params = {"secid": secid(code), "klt": 101, "fqt": 1, "beg": beg, "end": "20500101",
+              "fields1": "f1,f2,f3,f4,f5,f6", "fields2": "f51,f52,f53,f54,f55,f56,f57"}
+    try:
+        data = requests.get(KLINE_URL, params=params, headers=HEADERS, timeout=20).json().get("data")
+    except requests.RequestException:
+        return None
+    if not data or not data.get("klines"):
+        return None
+    rows = []
+    for line in data["klines"]:
+        p = line.split(",")
+        rows.append([p[0], float(p[1]), float(p[3]), float(p[4]), float(p[2]), float(p[5])])
+    write_cache_to(f, rows)
+    return rows
+
+
+def write_cache_to(f: Path, rows: list[list]) -> None:
+    tmp = f.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        fh.write("date,open,high,low,close,volume\n")
+        for r in rows:
+            fh.write(f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]},{r[5]}\n")
+    tmp.replace(f)
+
+
+def sbl3_pool_scan(qdate: str, force: bool = False) -> dict:
+    """个股主板三倍量扫描 + 跨日候选池维护。"""
+    universe = fetch_stock_universe()
+    print(f"[三倍量] 主板股票 {len(universe)} 只，扫描中…", flush=True)
+    todo = [u for u in universe]
+    results, done, lock = [], 0, threading.Lock()
+
+    def work(u):
+        nonlocal done
+        rows = stock_rows(u["code"], qdate, force)
+        out = None
+        if rows and len(rows) >= 80:
+            try:
+                out = sbl3_scan(rows)
+            except (ValueError, ZeroDivisionError):
+                out = None
+        with lock:
+            done += 1
+            if done % 500 == 0 or done == len(todo):
+                print(f"      {done}/{len(todo)}", flush=True)
+        return u, rows, out
+
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        for u, rows, out in ex.map(work, todo):
+            if out:
+                results.append({"code": u["code"], "name": u["name"], "rows": rows, "sb": out})
+
+    # 载入旧池
+    old = {"items": []}
+    if SBL3_POOL.exists():
+        try:
+            old = json.loads(SBL3_POOL.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            old = {"items": []}
+
+    by_code = {r["code"]: r for r in results}
+    pool, dropped = [], []
+    for item in old.get("items", []):
+        code = item["code"]
+        rec = by_code.get(code)
+        if not rec:
+            dropped.append({**item, "reason": "无最新数据"})
+            continue
+        rows = rec["rows"]
+        dates = [r[0][:10] for r in rows]
+        if item["sig_date"] not in dates:
+            dropped.append({**item, "reason": "信号日已过期"})
+            continue
+        days = len(dates) - 1 - dates.index(item["sig_date"])
+        life = item["life"]
+        low_after = min((r[3] for r in rows[dates.index(item["sig_date"]) + 1:]), default=life)
+        held = low_after >= life
+        today = rows[-1]
+        yesterday = rows[-2]
+        vr = today[5] / item["sig_vol"] if item.get("sig_vol") else 0
+        yang = today[4] > today[1] and today[4] >= yesterday[4]
+        if not held:
+            dropped.append({**item, "reason": "跌破生命线"}); continue
+        if days > 4:
+            dropped.append({**item, "reason": "超时未进场"}); continue
+        state = "企稳可进" if (0.3 <= vr <= 0.6 and yang) else "回调中"
+        pool.append({**item, "days": days, "vr": round(vr, 2), "held": held, "state": state,
+                     "price": round(today[4], 2), "dist_life": round((today[4] / life - 1) * 100, 2)})
+
+    in_pool = {p["code"] for p in pool}
+    new_today = []
+    for rec in results:
+        sb = rec["sb"]
+        if not sb["ok"] or rec["code"] in in_pool:
+            continue
+        entry = {"code": rec["code"], "name": rec["name"], "sig_date": qdate,
+                 "life": sb["life"], "hi20": sb["hi20"], "mult": sb["m"], "chg": sb["c"],
+                 "body": sb["b"], "upper": sb["u"], "flat": sb["f"],
+                 "sig_vol": rec["rows"][-1][5]}
+        pool.append({**entry, "days": 0, "vr": 1.0, "held": True, "state": "今日爆量",
+                     "price": round(rec["rows"][-1][4], 2), "dist_life": 0.0})
+        new_today.append(entry)
+
+    SBL3_POOL.write_text(json.dumps({"updated": qdate, "items": pool}, ensure_ascii=False, indent=1),
+                         encoding="utf-8")
+    print(f"[三倍量] 新增 {len(new_today)} / 池内 {len(pool)} / 剔除 {len(dropped)}", flush=True)
+    return {"date": qdate, "new": new_today, "pool": pool, "dropped": dropped}
+
+
 def build(force: bool = False) -> Path:
     t0 = time.time()
     print("[1/3] 拉取全市场 ETF 快照…", flush=True)
@@ -461,8 +621,9 @@ def build(force: bool = False) -> Path:
             "f3": round(flows.get(it["code"], {}).get("s3", 0.0), 1),
             "f5": round(flows.get(it["code"], {}).get("s5", 0.0), 1),
             "f10": round(flows.get(it["code"], {}).get("s10", 0.0), 1),
-            "sb": sbl3_scan(rows),
         })
+
+    sbl3_result = sbl3_pool_scan(qdate, force)
 
     print("      拉取指数日线（上证 / 创业板）", flush=True)
     index_meta = {
@@ -481,6 +642,7 @@ def build(force: bool = False) -> Path:
                     "买点=周线KDJ(9,3,3)凹底回勾 + 站上17日线 + MA5>MA17；"
                     "排序=距MA20由远到近（趋势强度）",
             "index": index_meta,
+            "sbl3": sbl3_result,
         },
         "codes": codes,
     }
