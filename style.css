@@ -264,7 +264,7 @@ body::before {
   background: var(--panel);
   overflow-x: auto;
 }
-.grid { min-width: 1680px; }
+.grid { min-width: 1940px; }
 
 .grid { width: 100%; border-collapse: collapse; }
 
@@ -600,3 +600,11 @@ body::before {
 .flow-badge.out { color: var(--down); border-color: rgba(34,197,139,.35); background: rgba(34,197,139,.08); }
 .flow-badge.mix { color: var(--muted); }
 .flow-pace { display: block; margin-top: 3px; font-size: 10px; color: var(--dim); }
+
+.ma-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 11.5px; white-space: nowrap; border: 1px solid var(--line);
+}
+.ma-badge.up { color: var(--up); border-color: rgba(255,91,91,.35); background: rgba(255,91,91,.08); }
+.ma-badge.down { color: var(--down); border-color: rgba(34,197,139,.35); background: rgba(34,197,139,.08); }
+.ma-badge.flat { color: var(--muted); }
