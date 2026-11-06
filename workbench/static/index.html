@@ -39,6 +39,7 @@
     <nav class="tabs" role="tablist">
       <button class="tab active" data-view="board" role="tab">买点看板</button>
       <button class="tab" data-view="positions" role="tab">我的持仓<span class="tab-badge" id="pos-badge" hidden></span></button>
+      <button class="tab" data-view="check" role="tab">买入检查</button>
     </nav>
 
     <section class="view" id="view-board">
@@ -187,6 +188,19 @@
       <div class="pos-note">
         止损价取 17 日线、减仓价取 5 日线，均为按实时价计算的动态值；周线 J ≥ 80 提示卖一半。
         参考止盈：成本 +12% 减半、+20% 清仓（规格书口径），未计入交易成本。
+      </div>
+    </section>
+
+    <section class="view" id="view-check" hidden>
+      <div class="check-bar">
+        <input id="check-input" placeholder="输入 6 位代码或名称，如 159992" maxlength="24">
+        <button id="check-btn" class="pos-submit" type="button">检查</button>
+        <span class="pos-msg" id="check-msg"></span>
+      </div>
+      <div id="check-result"></div>
+      <div class="pos-note">
+        判定顺序：档位 → 站稳17日线 → 资金流入 → 结构 → 风险。前三条任一不过即不可买；
+        周线 J ≥ 80、溢价 &gt; 3%、距 20 日线 &gt; 15% 为红线。数据为实时快照，尾盘再确认一次。
       </div>
     </section>
 
