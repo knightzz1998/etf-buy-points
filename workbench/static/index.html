@@ -40,6 +40,7 @@
       <button class="tab active" data-view="board" role="tab">买点看板</button>
       <button class="tab" data-view="positions" role="tab">我的持仓<span class="tab-badge" id="pos-badge" hidden></span></button>
       <button class="tab" data-view="check" role="tab">买入检查</button>
+      <button class="tab" data-view="sbl3" role="tab">三倍量</button>
     </nav>
 
     <section class="view" id="view-board">
@@ -202,6 +203,15 @@
         判定顺序：档位 → 站稳17日线 → 资金流入 → 结构 → 风险。前三条任一不过即不可买；
         周线 J ≥ 80、溢价 &gt; 3%、距 20 日线 &gt; 15% 为红线。数据为实时快照，尾盘再确认一次。
       </div>
+    </section>
+
+    <section class="view" id="view-sbl3" hidden>
+      <div class="sbl-note">
+        <b>底部横盘三倍量</b>：前 30 日横盘（极差 ≤15%、日均振幅 ≤3.5%）→ 当日量 3–6 倍近 10 日均量、
+        涨幅 ≥3%、实体 ≥50%、上影 ≤10%、站上 MA20 并破 20/60 日高。
+        <b>放量当天不追</b>，等 1–3 日缩量回调（量缩到爆量日 30%–60%）+ 小阳企稳再进场；跌破爆量阳线最低价即失效。
+      </div>
+      <div id="sbl-sections"></div>
     </section>
 
     <footer class="foot">

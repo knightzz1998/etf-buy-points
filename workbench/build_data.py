@@ -312,6 +312,99 @@ def load_history(items: list[dict], qdate: str, force: bool) -> dict:
     return hist
 
 
+SBL3 = dict(mult_min=3.0, mult_max=6.0, mult_abort=8.0, min_chg=3.0,
+            max_upper=0.10, min_body=0.50, flat_range=15.0, flat_amp=3.5,
+            high_mult=1.25, pull_lo=0.30, pull_hi=0.60, pull_days=3)
+
+
+def _sbl3_flags(rows: list[list], i: int) -> dict | None:
+    """对第 i 根 K 线做三倍量判定（口径同 sbl3_scan.py）。"""
+    if i < 70:
+        return None
+    bar = rows[i]
+    prev = rows[i - 1]
+    o, h, l, c, v = bar[1], bar[2], bar[3], bar[4], bar[5]
+    vol10 = sum(r[5] for r in rows[i - 10:i]) / 10
+    if vol10 <= 0:
+        return None
+    mult = v / vol10
+    chg = (c / prev[4] - 1) * 100
+    rng = h - l
+    body = (c - o) / rng if rng else 0.0
+    upper = (h - c) / rng if rng else 0.0
+    closes = [r[4] for r in rows[i - 59:i + 1]]
+    ma20 = sum(closes[-20:]) / 20
+    ma60 = sum(closes[-60:]) / len(closes)
+    hi20 = max(r[2] for r in rows[i - 20:i])
+    hi60 = max(r[2] for r in rows[i - 60:i])
+    win = rows[i - 30:i]
+    flat_range = (max(r[4] for r in win) / min(r[4] for r in win) - 1) * 100
+    flat_amp = sum((r[2] / r[3] - 1) * 100 for r in win if r[3] > 0) / 30
+    v10_prev = sum(r[5] for r in win[-10:]) / 10
+    v60_prev = sum(r[5] for r in rows[i - 60:i]) / 60
+    dry = v10_prev / v60_prev if v60_prev else 1.0
+    f = {
+        "mult_ok": SBL3["mult_min"] <= mult <= SBL3["mult_max"],
+        "abort": mult > SBL3["mult_abort"],
+        "chg_ok": chg >= SBL3["min_chg"],
+        "body_ok": body >= SBL3["min_body"],
+        "shadow_ok": upper <= SBL3["max_upper"],
+        "above20": c >= ma20,
+        "break": c >= hi20 or c >= hi60,
+        "flat_ok": flat_range <= SBL3["flat_range"] and flat_amp <= SBL3["flat_amp"],
+        "dry_ok": dry <= 0.8,
+        "high_pos": c > ma60 * SBL3["high_mult"],
+    }
+    f["core"] = all([f["mult_ok"], f["chg_ok"], f["body_ok"], f["shadow_ok"], f["above20"], f["break"]])
+    f["valid"] = f["core"] and not f["high_pos"] and not f["abort"]
+    return {"mult": mult, "chg": chg, "body": body, "upper": upper,
+            "flat": flat_range, "amp": flat_amp, "dry": dry,
+            "low": l, "hi20": hi20, "hi60": hi60, "flags": f}
+
+
+def sbl3_scan(rows: list[list]) -> dict | None:
+    """当日爆量 + 最近一次爆量后的回调跟踪。"""
+    n = len(rows)
+    if n < 80:
+        return None
+    today = _sbl3_flags(rows, n - 1)
+    if today is None:
+        return None
+    out = {
+        "m": round(today["mult"], 2), "c": round(today["chg"], 2),
+        "b": round(today["body"], 2), "u": round(today["upper"], 2),
+        "f": round(today["flat"], 1), "a": round(today["amp"], 2),
+        "d": round(today["dry"], 2), "life": round(today["low"], 3),
+        "hi20": round(today["hi20"], 3),
+        "ok": bool(today["flags"]["valid"]),
+    }
+    # 最近 5 根内的爆量日 → 回调状态
+    for i in range(n - 1, max(70, n - 6) - 1, -1):
+        sig = _sbl3_flags(rows, i)
+        if sig and sig["flags"]["valid"]:
+            days = n - 1 - i
+            life = sig["low"]
+            after = rows[i + 1:]
+            held = min((r[3] for r in after), default=life) >= life
+            vr = rows[-1][5] / rows[i][5] if rows[i][5] else 0
+            last = rows[-1]
+            yang = last[4] > last[1] and last[4] >= rows[-2][4]
+            if not held:
+                state = "失效"
+            elif days == 0:
+                state = "今日爆量"
+            elif days <= SBL3["pull_days"] and yang and SBL3["pull_lo"] <= vr <= SBL3["pull_hi"]:
+                state = "企稳可进"
+            elif days <= SBL3["pull_days"]:
+                state = "回调中"
+            else:
+                state = "超时"
+            out["st"] = {"d": days, "vr": round(vr, 2), "held": bool(held),
+                         "yang": bool(yang), "s": state, "life": round(life, 3)}
+            break
+    return out
+
+
 def week_key(date_str: str) -> str:
     d = dt.date.fromisoformat(date_str[:10])
     return (d - dt.timedelta(days=d.weekday())).isoformat()
@@ -368,6 +461,7 @@ def build(force: bool = False) -> Path:
             "f3": round(flows.get(it["code"], {}).get("s3", 0.0), 1),
             "f5": round(flows.get(it["code"], {}).get("s5", 0.0), 1),
             "f10": round(flows.get(it["code"], {}).get("s10", 0.0), 1),
+            "sb": sbl3_scan(rows),
         })
 
     print("      拉取指数日线（上证 / 创业板）", flush=True)
