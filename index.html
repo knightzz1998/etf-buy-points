@@ -41,6 +41,7 @@
       <button class="tab" data-view="positions" role="tab">我的持仓<span class="tab-badge" id="pos-badge" hidden></span></button>
       <button class="tab" data-view="check" role="tab">买入检查</button>
       <button class="tab" data-view="sbl3" role="tab">三倍量</button>
+      <button class="tab" data-view="sim" role="tab">个股模拟</button>
     </nav>
 
     <section class="view" id="view-board">
@@ -214,6 +215,22 @@
         跌破爆量阳线最低价即失效，第 4 个交易日仍未企稳则移出候选池。
       </div>
       <div id="sbl-sections"></div>
+    </section>
+
+    <section class="view" id="view-sim" hidden>
+      <div class="pos-summary">
+        <div><span>总资产</span><b id="sim-equity">--</b></div>
+        <div><span>可用现金</span><b id="sim-cash">--</b></div>
+        <div><span>持仓市值</span><b id="sim-holding">--</b></div>
+        <div><span>已实现盈亏</span><b id="sim-realized">--</b></div>
+        <div><span>胜率 / 笔数</span><b id="sim-stats">--</b></div>
+      </div>
+      <div class="sbl-note">
+        <b>三倍量个股模拟盘</b>：单笔 3 万元，最多同时持有 10 只（总资金 30 万）。
+        买入条件＝「企稳可进」；卖出＝盘中跌破爆量阳线最低价、浮盈 ≥20%、浮盈 >5% 后跌破 5 日线、或持有满 20 个交易日。
+        成交价按当日收盘/止损价估算，未计滑点，仅用于验证策略。
+      </div>
+      <div id="sim-body"></div>
     </section>
 
     <footer class="foot">
