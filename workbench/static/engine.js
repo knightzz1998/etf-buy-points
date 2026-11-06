@@ -120,7 +120,7 @@ export function evaluate(rec, q) {
       stable17: false,
       trendScore: null, trendLabel: null, order: null, macdState: null, macdRank: -1,
       dif: null, dea: null, macdHist: null, ma20Slope: null,
-      pos60: null, hi60: null, lo60: null, distHigh: null,
+      pos60: null, hi60: null, lo60: null, distHigh: null, run20: null, run60: null,
       jLast: null, jPrev: null, jMin6: null, jOverbought: false,
       pullbackHit: "-", buyReady: false, stop: null,
     });
@@ -238,6 +238,9 @@ export function evaluate(rec, q) {
     else { macdState = "空头"; macdRank = 1; }
   }
   const distHigh = (price / hi60 - 1) * 100;
+  const low20 = Math.min(...eff.slice(-20));
+  const run20 = (price / low20 - 1) * 100;
+  const run60 = (price / lo60 - 1) * 100;
 
   let trendScore = 50;
   if (order === "多头") trendScore += 20;
@@ -279,7 +282,7 @@ export function evaluate(rec, q) {
     distMa17, distMa20, distMa5, distMa10, distMa60,
     stable17,
     trendScore, trendLabel, order, macdState, macdRank, dif, dea, macdHist,
-    ma20Slope, pos60, hi60, lo60, distHigh,
+    ma20Slope, pos60, hi60, lo60, distHigh, run20, run60,
     // 策略 v2 排序：距 MA20 越远（趋势越强）越优先
     strength: Math.round(distMa20 * 100) / 100,
     jLast, jPrev, jMin6, jOverbought: jLast >= J_OVERBOUGHT,
