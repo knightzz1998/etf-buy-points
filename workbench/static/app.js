@@ -352,7 +352,7 @@ function filteredRows() {
 const SORT_DEFAULT_DIR = {
   signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
   met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1,
-  ma5: -1, ma10: -1, ma60: -1, order: -1, macd: -1, myrule: -1, premium: -1, r30: -1,
+  ma510: -1, ma1720: -1, ma60: -1, order: -1, macd: -1, myrule: -1, premium: -1, r30: -1,
 };
 
 function sortValue(r, key) {
@@ -369,8 +369,8 @@ function sortValue(r, key) {
     case "inflow": return r.mainInflow ?? 0;
     case "flow3": return r.flow3 ?? 0;
     case "flowsig": return flowSignal(r).rank;
-    case "ma5": return r.distMa5 ?? -999;
-    case "ma10": return r.distMa10 ?? -999;
+    case "ma510": return r.distMa5 ?? -999;
+    case "ma1720": return r.distMa17 ?? -999;
     case "ma60": return r.distMa60 ?? -999;
     case "order": return r.order === "多头" ? 2 : r.order === "空头" ? 0 : 1;
     case "macd": return r.macdRank ?? -1;
@@ -424,7 +424,7 @@ function sparkColor(r) {
 }
 
 function flowLines(r) {
-  const items = [["3日", r.flow3], ["5日", r.flow5], ["10日", r.flow10]];
+  const items = [["今日", r.mainInflow], ["3日", r.flow3], ["5日", r.flow5], ["10日", r.flow10]];
   if (items.every(([, v]) => v == null)) return '<span class="dash">—</span>';
   return items.map(([label, v]) => {
     const c = v > 0 ? "pos" : v < 0 ? "neg" : "dash";
@@ -512,29 +512,24 @@ function rowHtml(r) {
   const distCls = (r.distMa17 ?? 0) > 0 ? "pos" : "neg";
   const jCls = r.jOverbought ? "hot" : (r.jLast != null && r.jLast <= 20 ? "cold" : "");
   const premium = r.premium;
-  const premiumCell = premium == null
-    ? `<td class="col-num col-premium premium zero">—</td>`
-    : `<td class="col-num col-premium premium ${Math.abs(premium) >= 3 ? "warn" : ""}">${fmtPct(premium, 2)}</td>`;
+  const premiumWarnCss = Math.abs(premium ?? 0) >= 3 ? "warn" : "";
+  const premiumText = premium == null ? "—" : fmtPct(premium, 2);
   return `<tr data-code="${esc(r.code)}" class="${r.signal === "buy" ? "row-buy" : ""}">
     <td><span class="sig" data-s="${r.signal}">${SIGNAL_ICON[r.signal]} ${r.signalText}${r.nearBuy ? '<span class="near-tag">接近</span>' : ""}${gated(r) ? '<span class="gate-tag">不新开</span>' : ""}</span></td>
     <td><div class="name-cell"><b><button class="star ${state.watch.has(r.code) ? "on" : ""}" data-star="${r.code}" title="加入自选">★</button>${esc(r.name)}</b><span>${r.code} · ${esc(r.asset)}${r.peers > 1 ? ` · <b class="peer">同类 ${r.peers}</b>` : ""}</span></div></td>
     <td class="col-num">${fmt(r.price)}</td>
     <td class="col-num pct ${pctCls}">${fmtPct(r.pct)}</td>
-    <td class="col-num dist ${distCls}">${fmtPct(r.distMa17, 1)}</td>
-    <td class="col-num dist ${(r.distMa20 ?? 0) > 0 ? "pos" : "neg"}">${fmtPct(r.distMa20, 1)}</td>
-    <td class="col-num"><span class="dstack"><span>${fmt(r.ma5)}</span><em>${fmtPct(r.distMa5, 1)}</em></span></td>
-    <td class="col-num"><span class="dstack"><span>${fmt(r.ma10)}</span><em>${fmtPct(r.distMa10, 1)}</em></span></td>
-    <td class="col-num"><span class="dstack"><span>${fmt(r.ma60)}</span><em>${r.distMa60 == null ? "—" : fmtPct(r.distMa60, 1)}</em></span></td>
+    <td class="col-num macell"><span class="dstack"><span>5 ${fmt(r.ma5)}<em>${fmtPct(r.distMa5, 1)}</em></span><span>10 ${fmt(r.ma10)}<em>${fmtPct(r.distMa10, 1)}</em></span></span></td>
+    <td class="col-num macell"><span class="dstack"><span>17 ${fmt(r.ma17)}<em>${fmtPct(r.distMa17, 1)}</em></span><span>20 ${fmt(r.ma20)}<em>${fmtPct(r.distMa20, 1)}</em></span></span></td>
+    <td class="col-num macell"><span class="dstack"><span>${fmt(r.ma60)}<em>${r.distMa60 == null ? "—" : fmtPct(r.distMa60, 1)}</em></span></span></td>
     <td>${orderBadge(r)}</td>
     <td>${macdBadge(r)}</td>
     <td>${myRuleBadge(r)}</td>
-    <td class="col-cond">${condTags(r)}</td>
     <td class="col-num"><span class="jcell ${jCls}"><b>${r.jLast == null ? "—" : r.jLast.toFixed(0)}</b><span>谷 ${r.jMin6 == null ? "—" : r.jMin6.toFixed(0)}</span></span></td>
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
-    <td class="col-num col-inflow inflow ${(r.mainInflow ?? 0) > 0 ? "pos" : (r.mainInflow ?? 0) < 0 ? "neg" : ""}">${fmtInflow(r.mainInflow)}</td>
     <td class="col-num col-flow flowcell">${flowLines(r)}</td>
     <td class="col-flow">${flowBadge(r)}</td>
-    ${premiumCell}
+    <td class="col-num col-premium premium ${premiumWarnCss}">${premiumText}</td>
     <td class="col-spark spark">${sparkline(r.spark, { color: sparkColor(r) })}</td>
   </tr>`;
 }

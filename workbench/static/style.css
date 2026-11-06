@@ -264,7 +264,7 @@ body::before {
   background: var(--panel);
   overflow-x: auto;
 }
-.grid { min-width: 2020px; }
+.grid { min-width: 1580px; }
 
 .grid { width: 100%; border-collapse: collapse; }
 
@@ -608,3 +608,5 @@ body::before {
 .ma-badge.up { color: var(--up); border-color: rgba(255,91,91,.35); background: rgba(255,91,91,.08); }
 .ma-badge.down { color: var(--down); border-color: rgba(34,197,139,.35); background: rgba(34,197,139,.08); }
 .ma-badge.flat { color: var(--muted); }
+
+.macell em { font-style: normal; margin-left: 4px; font-size: 10px; color: var(--dim); }
