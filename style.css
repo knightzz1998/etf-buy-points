@@ -264,7 +264,7 @@ body::before {
   background: var(--panel);
   overflow-x: auto;
 }
-.grid { min-width: 1320px; }
+.grid { min-width: 1680px; }
 
 .grid { width: 100%; border-collapse: collapse; }
 
