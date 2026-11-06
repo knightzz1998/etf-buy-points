@@ -245,6 +245,7 @@ async function refresh() {
     render();
     renderPositions();
     updatePosBadge();
+    if (state.view === "sbl3") renderSbl3();
   } catch (err) {
     const shown = state.quoteAt
       ? `当前显示 ${state.quoteAt.toLocaleTimeString("zh-CN", { hour12: false })} 取的快照`
@@ -861,6 +862,12 @@ function bind() {
     const btn = e.target.closest("[data-del]");
     if (btn) removePosition(btn.dataset.del);
   });
+  $("sbl-sections").addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-code]");
+    if (!tr) return;
+    state.openCode = tr.dataset.code;
+    renderDrawer();
+  });
   $("pos-export").addEventListener("click", exportPositions);
   $("pos-import").addEventListener("click", () => $("pos-file").click());
   $("pos-file").addEventListener("change", (e) => {
@@ -1275,8 +1282,10 @@ function setView(view) {
   $("view-board").hidden = view !== "board";
   $("view-positions").hidden = view !== "positions";
   $("view-check").hidden = view !== "check";
+  $("view-sbl3").hidden = view !== "sbl3";
   if (view === "positions") renderPositions();
   if (view === "check" && $("check-input").value.trim()) runCheck();
+  if (view === "sbl3") renderSbl3();
 }
 
 
@@ -1366,4 +1375,57 @@ function runCheck() {
   const raw = $("check-input").value.trim();
   $("check-msg").textContent = "";
   renderCheck(raw);
+}
+
+
+/* ---------------- 底部横盘三倍量 ---------------- */
+
+function sblTable(list, emptyText) {
+  if (!list.length) return `<div class="sbl-empty">${emptyText}</div>`;
+  const body = list.map((r) => {
+    const sb = r.sb;
+    const life = sb.st ? sb.st.life : sb.life;
+    const dist = life && r.price ? (r.price / life - 1) * 100 : null;
+    const st = sb.st ? sb.st.s : (sb.ok ? "今日爆量" : "—");
+    const stCls = st === "企稳可进" ? "up" : st === "失效" ? "down" : "";
+    const extra = sb.st
+      ? `${sb.st.d === 0 ? "当日" : "D+" + sb.st.d} · 量比 ${(sb.st.vr * 100).toFixed(0)}%${sb.st.held ? "" : " · 已破位"}`
+      : (sb.ok ? "等 1–3 日缩量回调" : "—");
+    return `<tr data-code="${r.code}">
+      <td><div class="name-cell"><b>${esc(r.name)}</b><span>${r.code} · ${esc(r.asset)}</span></div></td>
+      <td class="col-num">${sb.m.toFixed(1)} 倍</td>
+      <td class="col-num ${sb.c > 0 ? "up" : "down"}">${fmtPct(sb.c)}</td>
+      <td class="col-num">${(sb.b * 100).toFixed(0)}%</td>
+      <td class="col-num">${(sb.u * 100).toFixed(0)}%</td>
+      <td class="col-num">${sb.f.toFixed(1)}%</td>
+      <td class="col-num">${fmt(life)}</td>
+      <td class="col-num">${dist == null ? "—" : fmtPct(dist, 1)}</td>
+      <td><span class="pos-advice ${stCls}">${st}</span><em style="display:block;color:var(--dim);font-size:10px">${extra}</em></td>
+    </tr>`;
+  }).join("");
+  return `<div class="board"><table class="grid sbl-grid">
+    <thead><tr>
+      <th>名称 / 代码</th><th class="col-num">量比</th><th class="col-num">涨幅</th>
+      <th class="col-num">实体</th><th class="col-num">上影</th><th class="col-num">横盘 30 日</th>
+      <th class="col-num">生命线</th><th class="col-num">距生命线</th><th>状态</th>
+    </tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function renderSbl3() {
+  const box = $("sbl-sections");
+  const rows = state.rows.filter((r) => r.sb);
+  const ready = rows.filter((r) => r.sb.ok).sort((a, b) => b.sb.m - a.sb.m);
+  const confirm = rows.filter((r) => r.sb.st && r.sb.st.s === "企稳可进").sort((a, b) => a.sb.st.d - b.sb.st.d);
+  const pulling = rows.filter((r) => r.sb.st && r.sb.st.s === "回调中").sort((a, b) => a.sb.st.d - b.sb.st.d);
+  const broken = rows.filter((r) => r.sb.st && r.sb.st.s === "失效");
+  const near = rows.filter((r) => !r.sb.ok && !r.sb.st && r.sb.m >= 2 && r.sb.c >= 1)
+    .sort((a, b) => b.sb.m - a.sb.m).slice(0, 20);
+
+  box.innerHTML = [
+    `<div class="sbl-sec"><h3>今日爆量 · 观察不追<span>共 ${ready.length} 只，放量当天不进场</span></h3>${sblTable(ready, "今天没有满足条件的三倍量阳线")}</div>`,
+    `<div class="sbl-sec"><h3>企稳可进<span>共 ${confirm.length} 只，缩量回调后收小阳</span></h3>${sblTable(confirm, "暂无企稳信号")}</div>`,
+    `<div class="sbl-sec"><h3>回调中<span>共 ${pulling.length} 只，等量能缩到 30–60% 并收阳</span></h3>${sblTable(pulling, "暂无回调中的标的")}</div>`,
+    `<div class="sbl-sec"><h3>接近爆量<span>量比 ≥2 且涨幅 ≥1%，共 ${near.length} 只（最多显示 20）</span></h3>${sblTable(near, "暂无接近标的")}</div>`,
+    broken.length ? `<div class="sbl-sec"><h3>已失效<span>跌破爆量阳线最低价，共 ${broken.length} 只</span></h3>${sblTable(broken, "")}</div>` : "",
+  ].join("");
 }

@@ -104,6 +104,7 @@ export function evaluate(rec, q) {
     flow5: rec.f5 == null ? null : Number(rec.f5),
     flow10: rec.f10 == null ? null : Number(rec.f10),
     qdate,
+    sb: rec.sb || null,
     spark: rec.d.slice(-30),
     // 近 30 日涨幅（用于该列排序）
     r30: rec.d.length >= 2 ? ((price / rec.d[Math.max(0, rec.d.length - 30)]) - 1) * 100 : null,
