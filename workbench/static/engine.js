@@ -117,6 +117,7 @@ export function evaluate(rec, q) {
       met: 0, score: 0, distMa17: null, distMa20: null, strength: 0,
       ma5: null, ma10: null, ma17: null, ma20: null, ma60: null,
       distMa5: null, distMa10: null, distMa60: null,
+      stable17: false,
       trendScore: null, trendLabel: null, order: null, macdState: null, macdRank: -1,
       dif: null, dea: null, macdHist: null, ma20Slope: null,
       pos60: null, hi60: null, lo60: null, distHigh: null,
@@ -255,6 +256,11 @@ export function evaluate(rec, q) {
   const trendLabel = trendScore >= 70 ? "强势" : trendScore >= 58 ? "偏强"
     : trendScore >= 42 ? "震荡" : trendScore >= 30 ? "偏弱" : "走弱";
 
+  // 站稳 17 日线：今日与昨日收盘均在 MA17 上方
+  const prevClose = eff.length >= 2 ? eff[eff.length - 2] : null;
+  const ma17Prev = eff.length >= 18 ? mean(eff.slice(-18, -1)) : null;
+  const stable17 = prevClose != null && ma17Prev != null && price > ma17 && prevClose > ma17Prev;
+
   const distMa5 = (price / ma5 - 1) * 100;
   const distMa10 = (price / ma10 - 1) * 100;
   const distMa60 = ma60 == null ? null : (price / ma60 - 1) * 100;
@@ -271,6 +277,7 @@ export function evaluate(rec, q) {
     met, buyReady, score: posScore * 50 + (jUp ? 20 : 0),
     ma5, ma10, ma17, ma20, ma60,
     distMa17, distMa20, distMa5, distMa10, distMa60,
+    stable17,
     trendScore, trendLabel, order, macdState, macdRank, dif, dea, macdHist,
     ma20Slope, pos60, hi60, lo60, distHigh,
     // 策略 v2 排序：距 MA20 越远（趋势越强）越优先
