@@ -63,6 +63,17 @@ export function kdjWeekly(h, l, c) {
   return { k, d, j };
 }
 
+function emaSeries(arr, span) {
+  const k = 2 / (span + 1);
+  let prev = arr[0];
+  const out = [prev];
+  for (let i = 1; i < arr.length; i++) {
+    prev = arr[i] * k + prev * (1 - k);
+    out.push(prev);
+  }
+  return out;
+}
+
 function mean(arr) {
   let s = 0;
   for (const x of arr) s += x;
@@ -106,7 +117,8 @@ export function evaluate(rec, q) {
       met: 0, score: 0, distMa17: null, distMa20: null, strength: 0,
       ma5: null, ma10: null, ma17: null, ma20: null, ma60: null,
       distMa5: null, distMa10: null, distMa60: null,
-      trendScore: null, trendLabel: null, order: null, ma20Slope: null,
+      trendScore: null, trendLabel: null, order: null, macdState: null, macdRank: -1,
+      dif: null, dea: null, macdHist: null, ma20Slope: null,
       pos60: null, hi60: null, lo60: null, distHigh: null,
       jLast: null, jPrev: null, jMin6: null, jOverbought: false,
       pullbackHit: "-", buyReady: false, stop: null,
@@ -205,6 +217,25 @@ export function evaluate(rec, q) {
   const order = ma60 == null ? "—"
     : (ma5 > ma17 && ma17 > ma20 && ma20 > ma60) ? "多头"
       : (ma5 < ma17 && ma17 < ma20 && ma20 < ma60) ? "空头" : "交织";
+
+  // MACD(12,26,9)
+  let macdState = null, macdRank = -1, dif = null, dea = null, macdHist = null;
+  if (eff.length >= 27) {
+    const e12 = emaSeries(eff, 12);
+    const e26 = emaSeries(eff, 26);
+    const difArr = e12.map((v, i) => v - e26[i]);
+    const deaArr = emaSeries(difArr, 9);
+    const n2 = difArr.length;
+    dif = difArr[n2 - 1];
+    dea = deaArr[n2 - 1];
+    const difPrev = difArr[n2 - 2];
+    const deaPrev = deaArr[n2 - 2];
+    macdHist = 2 * (dif - dea);
+    if (difPrev <= deaPrev && dif > dea) { macdState = "金叉"; macdRank = 3; }
+    else if (difPrev >= deaPrev && dif < dea) { macdState = "死叉"; macdRank = 0; }
+    else if (dif > dea) { macdState = "多头"; macdRank = 2; }
+    else { macdState = "空头"; macdRank = 1; }
+  }
   const distHigh = (price / hi60 - 1) * 100;
 
   let trendScore = 50;
@@ -240,7 +271,8 @@ export function evaluate(rec, q) {
     met, buyReady, score: posScore * 50 + (jUp ? 20 : 0),
     ma5, ma10, ma17, ma20, ma60,
     distMa17, distMa20, distMa5, distMa10, distMa60,
-    trendScore, trendLabel, order, ma20Slope, pos60, hi60, lo60, distHigh,
+    trendScore, trendLabel, order, macdState, macdRank, dif, dea, macdHist,
+    ma20Slope, pos60, hi60, lo60, distHigh,
     // 策略 v2 排序：距 MA20 越远（趋势越强）越优先
     strength: Math.round(distMa20 * 100) / 100,
     jLast, jPrev, jMin6, jOverbought: jLast >= J_OVERBOUGHT,

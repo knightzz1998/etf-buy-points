@@ -350,7 +350,8 @@ function filteredRows() {
 
 const SORT_DEFAULT_DIR = {
   signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
-  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1, ma5: -1, ma10: -1, ma60: -1, premium: -1, r30: -1,
+  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1,
+  ma5: -1, ma10: -1, ma60: -1, order: -1, macd: -1, premium: -1, r30: -1,
 };
 
 function sortValue(r, key) {
@@ -370,6 +371,8 @@ function sortValue(r, key) {
     case "ma5": return r.distMa5 ?? -999;
     case "ma10": return r.distMa10 ?? -999;
     case "ma60": return r.distMa60 ?? -999;
+    case "order": return r.order === "多头" ? 2 : r.order === "空头" ? 0 : 1;
+    case "macd": return r.macdRank ?? -1;
     case "premium": return r.premium ?? -999;
     case "r30": return r.r30 ?? -999;
     default: return 0;
@@ -449,6 +452,20 @@ function flowSignal(r) {
   return { text, mark, cls, pace, rank };
 }
 
+function orderBadge(r) {
+  if (!r.order || r.order === "—") return '<span class="ma-badge flat">—</span>';
+  const cls = r.order === "多头" ? "up" : r.order === "空头" ? "down" : "flat";
+  const mark = r.order === "多头" ? "↗" : r.order === "空头" ? "↘" : "~";
+  return `<span class="ma-badge ${cls}">${mark} ${r.order}</span>`;
+}
+
+function macdBadge(r) {
+  if (!r.macdState) return '<span class="ma-badge flat">—</span>';
+  const cls = r.macdState === "金叉" || r.macdState === "多头" ? "up" : "down";
+  const dot = r.macdState === "金叉" || r.macdState === "死叉" ? "● " : "";
+  return `<span class="ma-badge ${cls}">${dot}${r.macdState}</span>`;
+}
+
 function flowBadge(r) {
   const f = flowSignal(r);
   if (!f.text || f.text === "—") return '<span class="flow-badge mix">—</span>';
@@ -488,6 +505,8 @@ function rowHtml(r) {
     <td class="col-num"><span class="dstack"><span>${fmt(r.ma5)}</span><em>${fmtPct(r.distMa5, 1)}</em></span></td>
     <td class="col-num"><span class="dstack"><span>${fmt(r.ma10)}</span><em>${fmtPct(r.distMa10, 1)}</em></span></td>
     <td class="col-num"><span class="dstack"><span>${fmt(r.ma60)}</span><em>${r.distMa60 == null ? "—" : fmtPct(r.distMa60, 1)}</em></span></td>
+    <td>${orderBadge(r)}</td>
+    <td>${macdBadge(r)}</td>
     <td class="col-cond">${condTags(r)}</td>
     <td class="col-num"><span class="jcell ${jCls}"><b>${r.jLast == null ? "—" : r.jLast.toFixed(0)}</b><span>谷 ${r.jMin6 == null ? "—" : r.jMin6.toFixed(0)}</span></span></td>
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
@@ -659,6 +678,7 @@ function renderDrawer() {
       <div class="trend-bar"><i class="${trendCls}" style="width:${r.trendScore || 0}%"></i></div>
       <div class="trend-lines">
         <div><span>均线排列</span><b>${r.order === "—" || !r.order ? "数据不足" : `${r.order}（MA5/17/20/60）`}</b></div>
+        <div><span>MACD（12,26,9）</span><b>${r.macdState || "—"}${r.dif == null ? "" : ` ｜ DIF ${r.dif.toFixed(3)} / DEA ${r.dea.toFixed(3)}`}</b></div>
         <div><span>20 日线方向</span><b>${r.ma20Slope == null ? "—" : `${r.ma20Slope > 0 ? "向上" : r.ma20Slope < 0 ? "向下" : "走平"} ${fmtPct(r.ma20Slope, 2)}（5日）`}</b></div>
         <div><span>60 日位置</span><b>${r.pos60 == null ? "—" : `${r.pos60.toFixed(0)}% ｜ 距高 ${fmtPct(r.distHigh, 1)}`}</b></div>
         <div><span>资金 3/5/10 日</span><b>${fmtInflow(r.flow3)} / ${fmtInflow(r.flow5)} / ${fmtInflow(r.flow10)}</b></div>
