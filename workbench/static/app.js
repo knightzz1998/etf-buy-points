@@ -1277,9 +1277,11 @@ function setView(view) {
   $("view-positions").hidden = view !== "positions";
   $("view-check").hidden = view !== "check";
   $("view-sbl3").hidden = view !== "sbl3";
+  $("view-sim").hidden = view !== "sim";
   if (view === "positions") renderPositions();
   if (view === "check" && $("check-input").value.trim()) runCheck();
   if (view === "sbl3") renderSbl3();
+  if (view === "sim") renderStockSim();
 }
 
 
@@ -1599,4 +1601,57 @@ function renderSbl3() {
     `<div class="sbl-sec"><h3>接近爆量<span>量比 ≥2 且涨幅 ≥1%，共 ${near.length} 只（最多显示 20）</span></h3>${sblTable(near, "暂无接近标的")}</div>`,
     broken.length ? `<div class="sbl-sec"><h3>已失效<span>跌破爆量阳线最低价，共 ${broken.length} 只</span></h3>${sblTable(broken, "")}</div>` : "",
   ].join("");
+}
+
+
+/* ---------------- 个股模拟盘 ---------------- */
+
+function renderStockSim() {
+  const d = state.base && state.base.meta && state.base.meta.stockSim;
+  if (!d) {
+    $("sim-body").innerHTML = '<div class="sbl-empty">本次构建没有模拟盘数据，请重建数据。</div>';
+    return;
+  }
+  const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "");
+  $("sim-equity").textContent = fmtMoney(d.equity);
+  $("sim-cash").textContent = fmtMoney(d.cash);
+  $("sim-holding").textContent = fmtMoney(d.holding);
+  $("sim-realized").textContent = `${d.realized >= 0 ? "+" : ""}${fmtMoney(d.realized)}`;
+  $("sim-realized").className = cls(d.realized);
+  $("sim-stats").textContent = `${d.stats.win_rate}% / ${d.stats.trades} 笔`;
+
+  const pos = (d.positions || []).map((p) => `<tr>
+    <td><div class="name-cell"><b>${esc(p.name)}</b><span>${p.code}</span></div></td>
+    <td class="col-num">${p.entry_date}</td>
+    <td class="col-num">${p.entry_price}</td>
+    <td class="col-num">${p.price}</td>
+    <td class="col-num">${p.shares.toLocaleString("zh-CN")}</td>
+    <td class="col-num">${fmtMoney(p.price * p.shares)}</td>
+    <td class="col-num ${cls(p.pnl)}">${fmtPct(p.pnl, 2)}</td>
+    <td class="col-num">${p.life}</td>
+    <td class="col-num">${p.days}</td>
+  </tr>`).join("");
+  const closed = (d.closed || []).slice().reverse().map((c) => `<tr>
+    <td><div class="name-cell"><b>${esc(c.name)}</b><span>${c.code}</span></div></td>
+    <td class="col-num">${c.entry_date} → ${c.exit_date}</td>
+    <td class="col-num">${c.entry_price} → ${c.exit_price}</td>
+    <td class="col-num">${c.shares.toLocaleString("zh-CN")}</td>
+    <td class="col-num ${cls(c.pnl)}">${fmtPct(c.pnl, 2)}</td>
+    <td>${esc(c.reason)}</td>
+  </tr>`).join("");
+
+  $("sim-body").innerHTML = `
+    <div class="sbl-sec"><h3>持仓<span>共 ${(d.positions || []).length} 只 · 单笔 ${fmtMoney(d.ticket)} 元</span></h3>
+      ${pos ? `<div class="board"><table class="grid sim-grid">
+        <thead><tr><th>名称 / 代码</th><th class="col-num">建仓日</th><th class="col-num">成本</th>
+        <th class="col-num">现价</th><th class="col-num">股数</th><th class="col-num">市值</th>
+        <th class="col-num">盈亏</th><th class="col-num">生命线</th><th class="col-num">持有日</th></tr></thead>
+        <tbody>${pos}</tbody></table></div>` : '<div class="sbl-empty">暂无持仓（等「企稳可进」信号）</div>'}
+    </div>
+    <div class="sbl-sec"><h3>已平仓<span>共 ${d.stats.trades} 笔 · 平均 ${fmtPct(d.stats.avg_pnl, 2)}</span></h3>
+      ${closed ? `<div class="board"><table class="grid sim-grid">
+        <thead><tr><th>名称 / 代码</th><th class="col-num">日期</th><th class="col-num">价格</th>
+        <th class="col-num">股数</th><th class="col-num">收益</th><th>离场原因</th></tr></thead>
+        <tbody>${closed}</tbody></table></div>` : '<div class="sbl-empty">暂无平仓记录</div>'}
+    </div>`;
 }

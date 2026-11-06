@@ -431,6 +431,10 @@ def weekly_bars(rows: list[list]) -> list[list]:
 STOCK_CACHE = PROJECT / "data" / "stock_hist_cache"
 SBL3_POOL = PROJECT / "data" / "sbl3_pool.json"
 SBL3_HISTORY = PROJECT / "data" / "sbl3_history.jsonl"
+STOCK_SIM = PROJECT / "data" / "stock_sim.json"
+SIM_CAPITAL = 300000.0
+SIM_TICKET = 30000.0
+SIM_MAX_POS = 10
 MAIN_BOARD = ("600", "601", "603", "605", "000", "001", "002", "003")
 
 
@@ -613,6 +617,107 @@ def sbl3_pool_scan(qdate: str, force: bool = False) -> dict:
     return {"date": qdate, "new": new_today, "pool": pool, "dropped": dropped, "history": recent}
 
 
+def stock_sim_update(qdate: str, pool: list) -> dict:
+    """个股模拟盘：企稳可进买入 3 万，破生命线/止盈/破5日线/超时卖出。"""
+    if STOCK_SIM.exists():
+        try:
+            st = json.loads(STOCK_SIM.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            st = {}
+    else:
+        st = {}
+    st.setdefault("capital", SIM_CAPITAL)
+    st.setdefault("cash", SIM_CAPITAL)
+    st.setdefault("positions", [])
+    st.setdefault("closed", [])
+
+    # 1) 持仓检查
+    remain = []
+    for pos in st["positions"]:
+        rows = stock_rows(pos["code"], qdate, False)
+        if not rows or rows[-1][0][:10] != qdate:
+            remain.append(pos)
+            continue
+        dates = [r[0][:10] for r in rows]
+        today = rows[-1]
+        low, close = today[3], today[4]
+        ma5 = sum(r[4] for r in rows[-5:]) / 5
+        pnl = close / pos["entry_price"] - 1
+        days = len(dates) - 1 - dates.index(pos["entry_date"]) if pos["entry_date"] in dates else 0
+        reason, px = None, None
+        if low <= pos["life"]:
+            reason, px = "破生命线", pos["life"]
+        elif pnl >= 0.20:
+            reason, px = "止盈+20%", close
+        elif pnl > 0.05 and close < ma5:
+            reason, px = "跌破5日线", close
+        elif days >= 20:
+            reason, px = "时间止损", close
+        if reason:
+            amount = px * pos["shares"] * (1 - 0.00005)
+            st["cash"] += amount
+            st["closed"].append({
+                "code": pos["code"], "name": pos["name"],
+                "entry_date": pos["entry_date"], "entry_price": pos["entry_price"],
+                "exit_date": qdate, "exit_price": round(px, 2), "shares": pos["shares"],
+                "pnl": round((px / pos["entry_price"] - 1) * 100 - 0.01, 2), "reason": reason,
+            })
+            continue
+        pos.update({"price": round(close, 2), "pnl": round(pnl * 100, 2),
+                    "days": days, "life": pos["life"]})
+        remain.append(pos)
+    st["positions"] = remain
+
+    # 2) 新买入：企稳可进
+    held = {p["code"] for p in st["positions"]}
+    for item in pool:
+        if item["state"] != "企稳可进" or item["code"] in held:
+            continue
+        if len(st["positions"]) >= SIM_MAX_POS or st["cash"] < SIM_TICKET:
+            break
+        rows = stock_rows(item["code"], qdate, False)
+        if not rows or rows[-1][0][:10] != qdate:
+            continue
+        price = rows[-1][4]
+        shares = int(SIM_TICKET / price / 100) * 100
+        if shares <= 0:
+            continue
+        cost = shares * price * (1 + 0.00005)
+        if cost > st["cash"]:
+            continue
+        st["cash"] -= cost
+        st["positions"].append({
+            "code": item["code"], "name": item["name"], "entry_date": qdate,
+            "entry_price": round(price, 2), "shares": shares, "life": item["life"],
+            "price": round(price, 2), "pnl": 0.0, "days": 0,
+        })
+        held.add(item["code"])
+
+    STOCK_SIM.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    closed = st["closed"]
+    wins = [c for c in closed if c["pnl"] > 0]
+    holding_value = sum(p["price"] * p["shares"] for p in st["positions"])
+    realized = sum(c["pnl"] / 100 * c["entry_price"] * c["shares"] for c in closed)
+    return {
+        "capital": st["capital"],
+        "cash": round(st["cash"], 2),
+        "holding": round(holding_value, 2),
+        "equity": round(st["cash"] + holding_value, 2),
+        "realized": round(realized, 2),
+        "ticket": SIM_TICKET,
+        "max_pos": SIM_MAX_POS,
+        "positions": st["positions"],
+        "closed": closed[-20:],
+        "stats": {
+            "trades": len(closed),
+            "win_rate": round(len(wins) / len(closed) * 100, 1) if closed else 0,
+            "avg_pnl": round(sum(c["pnl"] for c in closed) / len(closed), 2) if closed else 0,
+            "total_pnl": round(sum(c["pnl"] for c in closed), 2),
+        },
+    }
+
+
 def build(force: bool = False) -> Path:
     t0 = time.time()
     print("[1/3] 拉取全市场 ETF 快照…", flush=True)
@@ -649,6 +754,7 @@ def build(force: bool = False) -> Path:
         })
 
     sbl3_result = sbl3_pool_scan(qdate, force)
+    stock_sim = stock_sim_update(qdate, sbl3_result["pool"])
 
     print("      拉取指数日线（上证 / 创业板）", flush=True)
     index_meta = {
@@ -668,6 +774,7 @@ def build(force: bool = False) -> Path:
                     "排序=距MA20由远到近（趋势强度）",
             "index": index_meta,
             "sbl3": sbl3_result,
+            "stockSim": stock_sim,
         },
         "codes": codes,
     }
