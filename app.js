@@ -23,6 +23,7 @@ const state = {
   view: "board",
   positions: [],
   watch: new Set(),
+  longHold: new Set(),
   interval: 180,
   openCode: null,
   dedup: true,
@@ -834,6 +835,15 @@ function bind() {
     }
   });
   $("pos-tbody").addEventListener("click", (e) => {
+    const hold = e.target.closest("[data-hold]");
+    if (hold) {
+      const code = hold.dataset.hold;
+      if (state.longHold.has(code)) state.longHold.delete(code);
+      else state.longHold.add(code);
+      saveHold();
+      renderPositions();
+      return;
+    }
     const btn = e.target.closest("[data-del]");
     if (btn) removePosition(btn.dataset.del);
   });
@@ -919,6 +929,7 @@ async function boot() {
   state.rows = computeRows();
   state.positions = loadPositions();
   state.watch = loadWatch();
+  state.longHold = loadHold();
   renderTier();
   render();
   syncChips();
@@ -963,6 +974,52 @@ async function loadFlows(codes) {
   return need.length;
 }
 
+const KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get";
+const klineCache = new Map();
+const HOLD_KEY = "etf_longhold_v1";
+
+async function loadKlines(codes) {
+  const now = Date.now();
+  const need = codes.filter((c) => !klineCache.has(c) || now - klineCache.get(c).at > 600000);
+  if (!need.length) return 0;
+  await Promise.all(need.map(async (code) => {
+    try {
+      const params = new URLSearchParams({
+        secid: secidOf(code), klt: "101", fqt: "1",
+        beg: "20240101", end: "20500101",
+        fields1: "f1,f2", fields2: "f51,f53",
+      });
+      const res = await fetch(`${KLINE_URL}?${params}`, { credentials: "omit" });
+      const json = await res.json();
+      const klines = (json && json.data && json.data.klines) || [];
+      const closes = klines.map((l) => Number(l.split(",")[1])).filter((v) => v > 0);
+      klineCache.set(code, { closes, at: Date.now() });
+    } catch (err) {
+      klineCache.set(code, { error: true, at: Date.now() });
+    }
+  }));
+  return need.length;
+}
+
+function pctOf(cost, closes, days) {
+  if (!closes || closes.length < days) return null;
+  const win = closes.slice(-days);
+  return (win.filter((v) => v < cost).length / win.length) * 100;
+}
+
+function loadHold() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(HOLD_KEY) || "[]");
+    return new Set(Array.isArray(raw) ? raw : []);
+  } catch (err) {
+    return new Set();
+  }
+}
+
+function saveHold() {
+  try { localStorage.setItem(HOLD_KEY, JSON.stringify([...state.longHold])); } catch (err) { /* 忽略 */ }
+}
+
 const POS_KEY = "etf_positions_v1";
 const WATCH_KEY = "etf_watch_v1";
 const fmtMoney = (v) => (Number.isFinite(v) ? v.toLocaleString("zh-CN", { maximumFractionDigits: 1 }) : "—");
@@ -994,6 +1051,7 @@ function saveWatch() {
 }
 
 function adviceFor(x) {
+  if (state.longHold.has(x.p.code)) return ["长持中", "hold"];
   if (!x.r || x.r.ma17 == null) return ["无指标", ""];
   const pnlPct = x.pnlPct;
   if (x.price < x.r.ma17) return ["破 17 日线 · 次日离场", "sell"];
@@ -1081,6 +1139,7 @@ function renderPositions() {
       <td class="col-num"><span class="dstack"><span>${x.p.cost.toFixed(3)}</span><em>${fmt(x.price)}</em></span></td>
       <td class="col-num">${x.p.shares.toLocaleString("zh-CN")}</td>
       <td class="col-num">${weight.toFixed(1)}%</td>
+      <td class="col-num">${pctCell(x.p.code, x.p.cost)}</td>
       <td class="col-num flowcell">${flowCell(x.p.code)}</td>
       <td class="col-flow">${posFlowBadge(x.p.code)}</td>
       <td class="col-num"><span class="dstack"><span>${fmt(stop)}</span><em>${stopDist == null ? "—" : fmtPct(stopDist, 1)}</em></span></td>
@@ -1088,13 +1147,15 @@ function renderPositions() {
       <td class="col-num"><span class="dstack"><span>${tpText(tp1, tp1d)}</span><em>${tpText(tp2, tp2d)}</em></span></td>
       <td class="col-num">${x.r && x.r.jLast != null ? x.r.jLast.toFixed(0) : "—"}</td>
       <td><span class="pos-advice ${advCls}">${advice}</span></td>
+      <td><button class="hold-toggle ${state.longHold.has(x.p.code) ? "on" : ""}" data-hold="${esc(x.p.code)}">${state.longHold.has(x.p.code) ? "长持中" : "设为长持"}</button></td>
       <td><button class="pos-del" data-del="${esc(x.p.code)}" title="删除">×</button></td>
     </tr>`;
   }).join("");
 
   // 资金流：补齐缺失后重绘一次
-  loadFlows(rows.map((x) => x.p.code)).then((n) => {
-    if (n && state.view === "positions") renderPositions();
+  const codes = rows.map((x) => x.p.code);
+  Promise.all([loadFlows(codes), loadKlines(codes)]).then(([nf, nk]) => {
+    if ((nf || nk) && state.view === "positions") renderPositions();
   });
 }
 
@@ -1103,6 +1164,17 @@ function posFlowBadge(code) {
   if (!f) return '<span class="flow-badge mix">读取中</span>';
   if (f.error) return '<span class="flow-badge mix">—</span>';
   return flowBadge({ flow3: f.s3, flow5: f.s5, flow10: f.s10 });
+}
+
+function pctCell(code, cost) {
+  const k = klineCache.get(code);
+  if (!k) return '<span class="dash">读取中…</span>';
+  if (k.error) return '<span class="dash">—</span>';
+  const p60 = pctOf(cost, k.closes, 60);
+  const p250 = pctOf(cost, k.closes, 250);
+  if (p60 == null) return '<span class="dash">—</span>';
+  const tip = p250 == null ? "" : `<em>250日 ${p250.toFixed(0)}%</em>`;
+  return `<span class="dstack"><span>60日 ${p60.toFixed(0)}%</span>${tip}</span>`;
 }
 
 function flowCell(code) {
