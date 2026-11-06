@@ -104,7 +104,8 @@ export function evaluate(rec, q) {
       reason: price > 0 ? "历史数据不足" : "无有效报价",
       cond: { jTrough: false, jUp: false, aboveMa17: false, ma5AboveMa17: false },
       met: 0, score: 0, distMa17: null, distMa20: null, strength: 0,
-      ma5: null, ma17: null, ma20: null, ma60: null,
+      ma5: null, ma10: null, ma17: null, ma20: null, ma60: null,
+      distMa5: null, distMa10: null, distMa60: null,
       trendScore: null, trendLabel: null, order: null, ma20Slope: null,
       pos60: null, hi60: null, lo60: null, distHigh: null,
       jLast: null, jPrev: null, jMin6: null, jOverbought: false,
@@ -119,6 +120,7 @@ export function evaluate(rec, q) {
   const eff = closes.concat([price]);
 
   const ma5 = mean(eff.slice(-5));
+  const ma10 = mean(eff.slice(-10));
   const ma17 = mean(eff.slice(-17));
   const ma20 = mean(eff.slice(-20));
   const ma60 = eff.length >= 59 ? mean(eff.slice(-60)) : null;
@@ -223,6 +225,8 @@ export function evaluate(rec, q) {
     : trendScore >= 42 ? "震荡" : trendScore >= 30 ? "偏弱" : "走弱";
 
   const distMa5 = (price / ma5 - 1) * 100;
+  const distMa10 = (price / ma10 - 1) * 100;
+  const distMa60 = ma60 == null ? null : (price / ma60 - 1) * 100;
   // 回踩17日线参考触发：近 20 个交易日最低价触及 MA17 的次数
   const lows = rec.dl && rec.dl.length ? rec.dl : rec.d.slice(-20);
   const hit = lows.filter((x) => x <= ma17).length;
@@ -234,8 +238,8 @@ export function evaluate(rec, q) {
     reason,
     cond: { jTrough, jUp, aboveMa17, ma5AboveMa17 },
     met, buyReady, score: posScore * 50 + (jUp ? 20 : 0),
-    ma5, ma17, ma20, ma60,
-    distMa17, distMa20, distMa5,
+    ma5, ma10, ma17, ma20, ma60,
+    distMa17, distMa20, distMa5, distMa10, distMa60,
     trendScore, trendLabel, order, ma20Slope, pos60, hi60, lo60, distHigh,
     // 策略 v2 排序：距 MA20 越远（趋势越强）越优先
     strength: Math.round(distMa20 * 100) / 100,

@@ -350,7 +350,7 @@ function filteredRows() {
 
 const SORT_DEFAULT_DIR = {
   signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
-  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1, premium: -1, r30: -1,
+  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1, ma5: -1, ma10: -1, ma60: -1, premium: -1, r30: -1,
 };
 
 function sortValue(r, key) {
@@ -367,6 +367,9 @@ function sortValue(r, key) {
     case "inflow": return r.mainInflow ?? 0;
     case "flow3": return r.flow3 ?? 0;
     case "flowsig": return flowSignal(r).rank;
+    case "ma5": return r.distMa5 ?? -999;
+    case "ma10": return r.distMa10 ?? -999;
+    case "ma60": return r.distMa60 ?? -999;
     case "premium": return r.premium ?? -999;
     case "r30": return r.r30 ?? -999;
     default: return 0;
@@ -482,6 +485,9 @@ function rowHtml(r) {
     <td class="col-num pct ${pctCls}">${fmtPct(r.pct)}</td>
     <td class="col-num dist ${distCls}">${fmtPct(r.distMa17, 1)}</td>
     <td class="col-num dist ${(r.distMa20 ?? 0) > 0 ? "pos" : "neg"}">${fmtPct(r.distMa20, 1)}</td>
+    <td class="col-num"><span class="dstack"><span>${fmt(r.ma5)}</span><em>${fmtPct(r.distMa5, 1)}</em></span></td>
+    <td class="col-num"><span class="dstack"><span>${fmt(r.ma10)}</span><em>${fmtPct(r.distMa10, 1)}</em></span></td>
+    <td class="col-num"><span class="dstack"><span>${fmt(r.ma60)}</span><em>${r.distMa60 == null ? "—" : fmtPct(r.distMa60, 1)}</em></span></td>
     <td class="col-cond">${condTags(r)}</td>
     <td class="col-num"><span class="jcell ${jCls}"><b>${r.jLast == null ? "—" : r.jLast.toFixed(0)}</b><span>谷 ${r.jMin6 == null ? "—" : r.jMin6.toFixed(0)}</span></span></td>
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
@@ -665,6 +671,7 @@ function renderDrawer() {
         <div><span>17 日线（止损线）</span><b>${fmt(r.ma17)}</b></div>
         <div><span>距 17 日线</span><b class="${(r.distMa17 ?? 0) > 0 ? "up" : "down"}">${fmtPct(r.distMa17, 1)}</b></div>
         <div><span>5 日线（持股线）</span><b>${fmt(r.ma5)}</b></div>
+        <div><span>10 日线</span><b>${fmt(r.ma10)}</b></div>
         <div><span>20 日线（趋势线）</span><b>${fmt(r.ma20)}</b></div>
         <div><span>距 20 日线（排序依据）</span><b class="${(r.distMa20 ?? 0) > 0 ? "up" : "down"}">${fmtPct(r.distMa20, 1)}</b></div>
         <div><span>60 日线</span><b>${fmt(r.ma60)}</b></div>
