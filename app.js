@@ -339,6 +339,7 @@ function matchSignal(r) {
     case "exit": return r.signal === "exit";
     case "near": return r.nearBuy;
     case "watch": return state.watch.has(r.code);
+    case "myrule": return myRule(r).pass;
     case "opportunity": return r.signal === "buy" || r.nearBuy;
     default: return true;
   }
@@ -351,7 +352,7 @@ function filteredRows() {
 const SORT_DEFAULT_DIR = {
   signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
   met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1,
-  ma5: -1, ma10: -1, ma60: -1, order: -1, macd: -1, premium: -1, r30: -1,
+  ma5: -1, ma10: -1, ma60: -1, order: -1, macd: -1, myrule: -1, premium: -1, r30: -1,
 };
 
 function sortValue(r, key) {
@@ -373,6 +374,7 @@ function sortValue(r, key) {
     case "ma60": return r.distMa60 ?? -999;
     case "order": return r.order === "多头" ? 2 : r.order === "空头" ? 0 : 1;
     case "macd": return r.macdRank ?? -1;
+    case "myrule": return myRule(r).rank;
     case "premium": return r.premium ?? -999;
     case "r30": return r.r30 ?? -999;
     default: return 0;
@@ -452,6 +454,24 @@ function flowSignal(r) {
   return { text, mark, cls, pace, rank };
 }
 
+// 用户自己的买入标准：站稳17日线 + 资金流入(3日) + 当前为进攻档
+function myRule(r) {
+  const c17 = !!r.stable17;
+  const cf = r.flow3 != null && r.flow3 > 0;
+  const ct = !!(state.tier && state.tier.name === "进攻");
+  const missing = [];
+  if (!c17) missing.push("17日线");
+  if (!cf) missing.push("资金");
+  if (!ct) missing.push("档位");
+  return { pass: c17 && cf && ct, c17, cf, ct, missing, rank: Number(c17) + Number(cf) + Number(ct) };
+}
+
+function myRuleBadge(r) {
+  const m = myRule(r);
+  if (m.pass) return '<span class="ma-badge up">✓ 可买</span>';
+  return `<span class="ma-badge flat">缺 ${m.missing.join(" / ")}</span>`;
+}
+
 function orderBadge(r) {
   if (!r.order || r.order === "—") return '<span class="ma-badge flat">—</span>';
   const cls = r.order === "多头" ? "up" : r.order === "空头" ? "down" : "flat";
@@ -507,6 +527,7 @@ function rowHtml(r) {
     <td class="col-num"><span class="dstack"><span>${fmt(r.ma60)}</span><em>${r.distMa60 == null ? "—" : fmtPct(r.distMa60, 1)}</em></span></td>
     <td>${orderBadge(r)}</td>
     <td>${macdBadge(r)}</td>
+    <td>${myRuleBadge(r)}</td>
     <td class="col-cond">${condTags(r)}</td>
     <td class="col-num"><span class="jcell ${jCls}"><b>${r.jLast == null ? "—" : r.jLast.toFixed(0)}</b><span>谷 ${r.jMin6 == null ? "—" : r.jMin6.toFixed(0)}</span></span></td>
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
@@ -666,6 +687,15 @@ function renderDrawer() {
     <div class="dw-sec">
       <h3>近 30 个交易日</h3>
       <div class="dw-chart">${chartSvg(r)}</div>
+    </div>
+
+    <div class="dw-sec">
+      <h3>我的买入标准</h3>
+      <div class="cond-list">
+        ${condItem(!!r.stable17, "站稳 17 日线（今日与昨日收盘均在上方）", "MA17 " + fmt(r.ma17))}
+        ${condItem(r.flow3 != null && r.flow3 > 0, "资金流入（3 日主力净流入 > 0）", fmtInflow(r.flow3))}
+        ${condItem(!!(state.tier && state.tier.name === "进攻"), "当前档位为进攻档", state.tier ? state.tier.name : "未知")}
+      </div>
     </div>
 
     <div class="dw-sec">
