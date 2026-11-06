@@ -589,3 +589,14 @@ body::before {
 .trend-lines div:last-child { border-bottom: 0; }
 .trend-lines span { color: var(--dim); white-space: nowrap; }
 .trend-lines b { font-family: var(--mono); font-weight: 500; font-size: 11.5px; color: var(--muted); text-align: right; }
+
+.flow-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 11.5px; white-space: nowrap;
+  border: 1px solid var(--line);
+}
+.flow-badge.in { color: var(--up); border-color: rgba(255,91,91,.35); background: rgba(255,91,91,.08); }
+.flow-badge.out { color: var(--down); border-color: rgba(34,197,139,.35); background: rgba(34,197,139,.08); }
+.flow-badge.mix { color: var(--muted); }
+.flow-pace { display: block; margin-top: 3px; font-size: 10px; color: var(--dim); }
