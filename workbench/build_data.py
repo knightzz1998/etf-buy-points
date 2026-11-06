@@ -569,7 +569,12 @@ def sbl3_pool_scan(qdate: str, force: bool = False) -> dict:
             dropped.append({**item, "reason": "跌破生命线"}); continue
         if days > 4:
             dropped.append({**item, "reason": "超时未进场"}); continue
-        state = "企稳可进" if (0.3 <= vr <= 0.6 and yang) else "回调中"
+        if days == 0:
+            state = "今日爆量"
+        elif 0.3 <= vr <= 0.6 and yang:
+            state = "企稳可进"
+        else:
+            state = "回调中"
         pool.append({**item, "days": days, "vr": round(vr, 2), "held": held, "state": state,
                      "price": round(today[4], 2), "dist_life": round((today[4] / life - 1) * 100, 2)})
 

@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -35,6 +37,13 @@ def assemble_dist() -> None:
     for item in (ROOT / "static").iterdir():
         if item.is_file():
             shutil.copy2(item, SITE / item.name)
+    # 资源版本号：避免浏览器用旧 JS 配新 HTML
+    ver = str(int(time.time()))
+    idx = SITE / "index.html"
+    html = idx.read_text(encoding="utf-8")
+    html = re.sub(r'(src|href)="(app\.js|engine\.js|style\.css)"',
+                  lambda m: f'{m.group(1)}="{m.group(2)}?v={ver}"', html)
+    idx.write_text(html, encoding="utf-8")
     if not (SITE / "data" / "base.json").exists():
         raise SystemExit("缺少 dist/data/base.json，请先运行 python3 workbench/build_data.py")
     print(f"dist 就绪：{SITE}")
