@@ -707,6 +707,7 @@ function renderDrawer() {
         <div><span>MACD（12,26,9）</span><b>${r.macdState || "—"}${r.dif == null ? "" : ` ｜ DIF ${r.dif.toFixed(3)} / DEA ${r.dea.toFixed(3)}`}</b></div>
         <div><span>20 日线方向</span><b>${r.ma20Slope == null ? "—" : `${r.ma20Slope > 0 ? "向上" : r.ma20Slope < 0 ? "向下" : "走平"} ${fmtPct(r.ma20Slope, 2)}（5日）`}</b></div>
         <div><span>60 日位置</span><b>${r.pos60 == null ? "—" : `${r.pos60.toFixed(0)}% ｜ 距高 ${fmtPct(r.distHigh, 1)}`}</b></div>
+        <div><span>距 60 日低点</span><b class="${(r.run60 ?? 0) > 20 ? "up" : ""}">${r.run60 == null ? "—" : fmtPct(r.run60, 1)}${(r.run60 ?? 0) > 20 ? "（已透支）" : ""}</b></div>
         <div><span>资金 3/5/10 日</span><b>${fmtInflow(r.flow3)} / ${fmtInflow(r.flow5)} / ${fmtInflow(r.flow10)}</b></div>
       </div>
     </div>
@@ -1305,7 +1306,8 @@ function renderCheck(code) {
   const redJ = r.jLast != null && r.jLast >= 80;
   const redPrem = r.premium != null && r.premium > 3;
   const redDist = r.distMa20 != null && r.distMa20 > 15;
-  const red = redJ || redPrem || redDist;
+  const redRun = r.run60 != null && r.run60 > 20;
+  const red = redJ || redPrem || redDist || redRun;
 
   const tierText = tier
     ? `${tier.name}｜上证${tier.sh.above ? "上" : "下"}、创业板${tier.cy.above ? "上" : "下"}`
@@ -1313,8 +1315,8 @@ function renderCheck(code) {
   const structText = [r.order || "—", `MACD ${r.macdState || "—"}`, `5/10日线 ${r.distMa5 == null ? "—" : fmtPct(r.distMa5, 1)} / ${r.distMa10 == null ? "—" : fmtPct(r.distMa10, 1)}`].join("｜");
   const riskText = [`J ${r.jLast == null ? "—" : r.jLast.toFixed(0)}`,
                     `距20日 ${fmtPct(r.distMa20, 1)}`,
-                    `溢价 ${r.premium == null ? "—" : fmtPct(r.premium, 2)}`,
-                    `成交额 ${fmtAmount(r.amount)}`].join("｜");
+                    `距60日低 ${r.run60 == null ? "—" : fmtPct(r.run60, 1)}`,
+                    `溢价 ${r.premium == null ? "—" : fmtPct(r.premium, 2)}`].join("｜");
 
   const hardOk = s1 && s2 && s3 && !red;
   let verdict, cls, advice;
@@ -1334,6 +1336,7 @@ function renderCheck(code) {
     if (redJ) miss.push("周线 J ≥80");
     if (redPrem) miss.push("溢价 >3%");
     if (redDist) miss.push("距 20 日线 >15%");
+    if (redRun) miss.push(`距 60 日低点 >20%（现 ${fmtPct(r.run60, 1)}）`);
     verdict = "✗ 暂不可买";
     cls = "no";
     advice = `缺：${miss.join("、")}。${s2 ? `可等回踩 MA17 ${fmt(r.ma17)} 附近再观察` : "等它重新站上 17 日线"}。`;
