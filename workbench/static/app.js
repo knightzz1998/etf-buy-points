@@ -1399,6 +1399,26 @@ function sblTable(list, emptyText) {
     </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+function sblHistory(hist) {
+  if (!hist.length) return `<div class="sbl-sec"><h3>信号历史</h3><div class="sbl-empty">暂无历史记录</div></div>`;
+  const rows = hist.slice().reverse().map((h) => {
+    const names = (h.new || []).map((x) => `${esc(x.name)}（${x.code}）${x.mult == null ? "" : x.mult.toFixed(1) + " 倍"}`).join("、");
+    const drops = (h.dropped || []).map((x) => `${esc(x.name)}：${esc(x.reason || "")}`).join("；");
+    return `<tr>
+      <td>${h.date}</td>
+      <td class="col-num">${(h.new || []).length}</td>
+      <td>${names || "—"}</td>
+      <td class="col-num">${(h.dropped || []).length}</td>
+      <td style="color:var(--dim);font-size:11.5px">${drops || "—"}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="sbl-sec"><h3>信号历史<span>最近 ${hist.length} 个交易日，每天都有信号属正常</span></h3>
+    <div class="board"><table class="grid sbl-grid">
+      <thead><tr><th>日期</th><th class="col-num">新增</th><th>信号标的</th><th class="col-num">剔除</th><th>剔除原因</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div></div>`;
+}
+
 function renderSbl3() {
   const box = $("sbl-sections");
   const data = state.base && state.base.meta && state.base.meta.sbl3;
@@ -1416,6 +1436,7 @@ function renderSbl3() {
     `<div class="sbl-sec"><h3>候选池 · 企稳可进<span>共 ${ready.length} 只</span></h3>${sblTable(ready, "暂无企稳信号")}</div>`,
     `<div class="sbl-sec"><h3>候选池 · 回调中<span>共 ${pulling.length} 只，等量缩到 30–60% 并收阳</span></h3>${sblTable(pulling, "暂无回调中的标的")}</div>`,
     dropped.length ? `<div class="sbl-sec"><h3>今日剔除<span>共 ${dropped.length} 只</span></h3>${sblTable(dropped, "")}</div>` : "",
+    sblHistory(data.history || []),
   ].join("");
 }
 
@@ -1539,6 +1560,26 @@ function sblTable(list, emptyText) {
       <th class="col-num">实体</th><th class="col-num">上影</th><th class="col-num">横盘 30 日</th>
       <th class="col-num">生命线</th><th class="col-num">距生命线</th><th>状态</th>
     </tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+function sblHistory(hist) {
+  if (!hist.length) return `<div class="sbl-sec"><h3>信号历史</h3><div class="sbl-empty">暂无历史记录</div></div>`;
+  const rows = hist.slice().reverse().map((h) => {
+    const names = (h.new || []).map((x) => `${esc(x.name)}（${x.code}）${x.mult == null ? "" : x.mult.toFixed(1) + " 倍"}`).join("、");
+    const drops = (h.dropped || []).map((x) => `${esc(x.name)}：${esc(x.reason || "")}`).join("；");
+    return `<tr>
+      <td>${h.date}</td>
+      <td class="col-num">${(h.new || []).length}</td>
+      <td>${names || "—"}</td>
+      <td class="col-num">${(h.dropped || []).length}</td>
+      <td style="color:var(--dim);font-size:11.5px">${drops || "—"}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="sbl-sec"><h3>信号历史<span>最近 ${hist.length} 个交易日，每天都有信号属正常</span></h3>
+    <div class="board"><table class="grid sbl-grid">
+      <thead><tr><th>日期</th><th class="col-num">新增</th><th>信号标的</th><th class="col-num">剔除</th><th>剔除原因</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div></div>`;
 }
 
 function renderSbl3() {

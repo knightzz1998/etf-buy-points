@@ -430,6 +430,7 @@ def weekly_bars(rows: list[list]) -> list[list]:
 
 STOCK_CACHE = PROJECT / "data" / "stock_hist_cache"
 SBL3_POOL = PROJECT / "data" / "sbl3_pool.json"
+SBL3_HISTORY = PROJECT / "data" / "sbl3_history.jsonl"
 MAIN_BOARD = ("600", "601", "603", "605", "000", "001", "002", "003")
 
 
@@ -580,12 +581,36 @@ def sbl3_pool_scan(qdate: str, force: bool = False) -> dict:
                  "sig_vol": rec["rows"][-1][5]}
         pool.append({**entry, "days": 0, "vr": 1.0, "held": True, "state": "今日爆量",
                      "price": round(rec["rows"][-1][4], 2), "dist_life": 0.0})
-        new_today.append(entry)
+
+    # 当日信号 = 池内 sig_date 为今天的所有标的（同日重跑也能还原）
+    new_today = [p for p in pool if p.get("sig_date") == qdate]
 
     SBL3_POOL.write_text(json.dumps({"updated": qdate, "items": pool}, ensure_ascii=False, indent=1),
                          encoding="utf-8")
-    print(f"[三倍量] 新增 {len(new_today)} / 池内 {len(pool)} / 剔除 {len(dropped)}", flush=True)
-    return {"date": qdate, "new": new_today, "pool": pool, "dropped": dropped}
+
+    # 历史记录：每天一条，同日重跑覆盖
+    hist = []
+    if SBL3_HISTORY.exists():
+        for line in SBL3_HISTORY.read_text(encoding="utf-8").splitlines():
+            try:
+                rec = json.loads(line)
+                if rec.get("date") != qdate:
+                    hist.append(rec)
+            except json.JSONDecodeError:
+                continue
+    hist.append({
+        "date": qdate,
+        "new": [{"code": x["code"], "name": x["name"], "mult": x["mult"], "chg": x["chg"],
+                 "life": x["life"]} for x in new_today],
+        "dropped": [{"code": x["code"], "name": x["name"], "reason": x["reason"]} for x in dropped],
+    })
+    hist.sort(key=lambda r: r["date"])
+    SBL3_HISTORY.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in hist) + "\n",
+                            encoding="utf-8")
+    recent = hist[-30:]
+    print(f"[三倍量] 新增 {len(new_today)} / 池内 {len(pool)} / 剔除 {len(dropped)} / 历史 {len(hist)} 天",
+          flush=True)
+    return {"date": qdate, "new": new_today, "pool": pool, "dropped": dropped, "history": recent}
 
 
 def build(force: bool = False) -> Path:
