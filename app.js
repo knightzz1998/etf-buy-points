@@ -931,9 +931,20 @@ function tick() {
 
 async function boot() {
   bind();
+  el.empty.hidden = false;
+  el.empty.innerHTML = "正在加载全市场数据…（约 2MB，首次可能需要几秒）";
   try {
-    const res = await fetch("data/base.json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    let res = null;
+    for (let i = 0; i < 3; i++) {
+      try {
+        res = await fetch("data/base.json", { cache: "no-store" });
+        if (res.ok) break;
+      } catch (err) {
+        res = null;
+      }
+      await new Promise((r) => setTimeout(r, 1200 * (i + 1)));
+    }
+    if (!res || !res.ok) throw new Error(`数据加载失败${res ? " HTTP " + res.status : ""}`);
     state.base = await res.json();
     el.baseDate.textContent = state.base.meta.data_date;
     el.footDate.textContent = state.base.meta.data_date;
@@ -1287,160 +1298,14 @@ function setView(view) {
 
 /* ---------------- 买入检查 ---------------- */
 
-function checkStep(n, title, pass, value, cls) {
-  const mark = pass ? "✓" : "✗";
-  const klass = cls || (pass ? "pass" : "fail");
-  return `<div class="check-step ${klass}"><span><span class="mark">${mark}</span>${n}. ${title}</span><span class="v">${value}</span></div>`;
-}
 
-function renderCheck(code) {
-  const box = $("check-result");
-  const q = String(code || "").trim();
-  if (!q) { box.innerHTML = ""; return; }
-  const r = state.rows.find((x) => x.code === q) ||
-    state.rows.find((x) => x.name.toLowerCase().includes(q.toLowerCase()));
-  if (!r) {
-    box.innerHTML = `<div class="empty">没找到「${esc(q)}」，试试 6 位代码或名称关键词。</div>`;
-    return;
-  }
-  const tier = state.tier;
-  const s1 = !!(tier && tier.name === "进攻");
-  const s2 = !!r.stable17;
-  const s3 = r.flow3 != null && r.flow3 > 0;
-  const s4 = r.order === "多头" || r.macdState === "金叉" || r.macdState === "多头";
-  const redJ = r.jLast != null && r.jLast >= 80;
-  const redPrem = r.premium != null && r.premium > 3;
-  const redDist = r.distMa20 != null && r.distMa20 > 15;
-  const redRun = r.run60 != null && r.run60 > 20;
-  const red = redJ || redPrem || redDist || redRun;
 
-  const tierText = tier
-    ? `${tier.name}｜上证${tier.sh.above ? "上" : "下"}、创业板${tier.cy.above ? "上" : "下"}`
-    : "档位不可用";
-  const structText = [r.order || "—", `MACD ${r.macdState || "—"}`, `5/10日线 ${r.distMa5 == null ? "—" : fmtPct(r.distMa5, 1)} / ${r.distMa10 == null ? "—" : fmtPct(r.distMa10, 1)}`].join("｜");
-  const riskText = [`J ${r.jLast == null ? "—" : r.jLast.toFixed(0)}`,
-                    `距20日 ${fmtPct(r.distMa20, 1)}`,
-                    `距60日低 ${r.run60 == null ? "—" : fmtPct(r.run60, 1)}`,
-                    `溢价 ${r.premium == null ? "—" : fmtPct(r.premium, 2)}`].join("｜");
-
-  const hardOk = s1 && s2 && s3 && !red;
-  let verdict, cls, advice;
-  if (hardOk && s4) {
-    verdict = "✓ 可以买";
-    cls = "ok";
-    advice = `尾盘（14:45 后）再确认一次：现价仍在 MA17 ${fmt(r.ma17)} 上方。止损位 ${fmt(r.ma17)}，破 5 日线 ${fmt(r.ma5)} 减仓。`;
-  } else if (hardOk && !s4) {
-    verdict = "△ 条件满足，结构一般";
-    cls = "warn";
-    advice = `三条硬条件都过，但均线/MACD 还没转强，建议半仓或等 MACD 金叉。止损 ${fmt(r.ma17)}。`;
-  } else {
-    const miss = [];
-    if (!s1) miss.push(`档位（当前${tier ? tier.name : "未知"}）`);
-    if (!s2) miss.push("站稳 17 日线");
-    if (!s3) miss.push("资金流入");
-    if (redJ) miss.push("周线 J ≥80");
-    if (redPrem) miss.push("溢价 >3%");
-    if (redDist) miss.push("距 20 日线 >15%");
-    if (redRun) miss.push(`距 60 日低点 >20%（现 ${fmtPct(r.run60, 1)}）`);
-    verdict = "✗ 暂不可买";
-    cls = "no";
-    advice = `缺：${miss.join("、")}。${s2 ? `可等回踩 MA17 ${fmt(r.ma17)} 附近再观察` : "等它重新站上 17 日线"}。`;
-  }
-
-  box.innerHTML = `
-    <div class="check-card">
-      <div class="check-head">
-        <h2>${esc(r.name)}</h2>
-        <span class="code">${r.code} · ${esc(r.asset)}</span>
-        <span class="price">${fmt(r.price)}</span>
-        <span class="pct ${r.pct > 0 ? "up" : r.pct < 0 ? "down" : "flat"}">${fmtPct(r.pct)}</span>
-      </div>
-      <div class="dw-sub">${r.state || ""} · 行情 ${r.qdate || "—"}</div>
-      <div class="check-verdict ${cls}">${verdict}<small>${esc(advice)}</small></div>
-      <div class="check-steps">
-        ${checkStep(1, "档位为进攻档", s1, tierText)}
-        ${checkStep(2, "站稳 17 日线（今昨两日）", s2, `${fmtPct(r.distMa17, 2)}｜MA17 ${fmt(r.ma17)}`)}
-        ${checkStep(3, "资金流入（3 日）", s3, r.flow3 == null ? "无数据" : fmtInflow(r.flow3))}
-        ${checkStep(4, "结构：均线 / MACD", s4, structText, s4 ? "pass" : "warn")}
-        ${checkStep(5, "风险：J / 距20日 / 溢价", !red, riskText)}
-      </div>
-    </div>`;
-}
-
-function runCheck() {
-  const raw = $("check-input").value.trim();
-  $("check-msg").textContent = "";
-  renderCheck(raw);
-}
 
 
 /* ---------------- 底部横盘三倍量 ---------------- */
 
-function sblTable(list, emptyText) {
-  if (!list.length) return `<div class="sbl-empty">${emptyText}</div>`;
-  const rows = list.map((it) => {
-    const cls = it.state === "企稳可进" ? "up" : it.state === "今日爆量" ? "" : it.state === "回调中" ? "" : "down";
-    return `<tr>
-      <td><div class="name-cell"><b>${esc(it.name)}</b><span>${it.code}</span></div></td>
-      <td class="col-num">${it.sig_date || "—"}</td>
-      <td class="col-num">${it.mult == null ? "—" : it.mult.toFixed(1) + " 倍"}</td>
-      <td class="col-num ${(it.chg || 0) > 0 ? "up" : "down"}">${it.chg == null ? "—" : fmtPct(it.chg)}</td>
-      <td class="col-num">${it.life == null ? "—" : fmt(it.life)}</td>
-      <td class="col-num">${it.price == null ? "—" : fmt(it.price)}</td>
-      <td class="col-num">${it.dist_life == null ? "—" : fmtPct(it.dist_life, 1)}</td>
-      <td class="col-num">${it.days == null ? "—" : "D+" + it.days}</td>
-      <td class="col-num">${it.vr == null ? "—" : (it.vr * 100).toFixed(0) + "%"}</td>
-      <td><span class="pos-advice ${cls}">${it.state}${it.reason ? "：" + it.reason : ""}</span></td>
-    </tr>`;
-  }).join("");
-  return `<div class="board"><table class="grid sbl-grid">
-    <thead><tr>
-      <th>名称 / 代码</th><th class="col-num">信号日</th><th class="col-num">量比</th>
-      <th class="col-num">涨幅</th><th class="col-num">生命线</th><th class="col-num">现价</th>
-      <th class="col-num">距生命线</th><th class="col-num">持有日</th><th class="col-num">量缩</th><th>状态</th>
-    </tr></thead><tbody>${rows}</tbody></table></div>`;
-}
 
-function sblHistory(hist) {
-  if (!hist.length) return `<div class="sbl-sec"><h3>信号历史</h3><div class="sbl-empty">暂无历史记录</div></div>`;
-  const rows = hist.slice().reverse().map((h) => {
-    const names = (h.new || []).map((x) => `${esc(x.name)}（${x.code}）${x.mult == null ? "" : x.mult.toFixed(1) + " 倍"}`).join("、");
-    const drops = (h.dropped || []).map((x) => `${esc(x.name)}：${esc(x.reason || "")}`).join("；");
-    return `<tr>
-      <td>${h.date}</td>
-      <td class="col-num">${(h.new || []).length}</td>
-      <td>${names || "—"}</td>
-      <td class="col-num">${(h.dropped || []).length}</td>
-      <td style="color:var(--dim);font-size:11.5px">${drops || "—"}</td>
-    </tr>`;
-  }).join("");
-  return `<div class="sbl-sec"><h3>信号历史<span>最近 ${hist.length} 个交易日，每天都有信号属正常</span></h3>
-    <div class="board"><table class="grid sbl-grid">
-      <thead><tr><th>日期</th><th class="col-num">新增</th><th>信号标的</th><th class="col-num">剔除</th><th>剔除原因</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div></div>`;
-}
 
-function renderSbl3() {
-  const box = $("sbl-sections");
-  const data = state.base && state.base.meta && state.base.meta.sbl3;
-  if (!data || !data.pool) {
-    box.innerHTML = '<div class="sbl-empty">本次构建没有三倍量数据，请重建数据。</div>';
-    return;
-  }
-  const pool = data.pool || [];
-  const fresh = pool.filter((x) => x.state === "今日爆量");
-  const ready = pool.filter((x) => x.state === "企稳可进");
-  const pulling = pool.filter((x) => x.state === "回调中");
-  const dropped = data.dropped || [];
-  box.innerHTML = [
-    `<div class="sbl-sec"><h3>今日新增 · 观察不追<span>${data.date} 共 ${fresh.length} 只</span></h3>${sblTable(fresh, "今天没有满足条件的三倍量阳线")}</div>`,
-    `<div class="sbl-sec"><h3>候选池 · 企稳可进<span>共 ${ready.length} 只</span></h3>${sblTable(ready, "暂无企稳信号")}</div>`,
-    `<div class="sbl-sec"><h3>候选池 · 回调中<span>共 ${pulling.length} 只，等量缩到 30–60% 并收阳</span></h3>${sblTable(pulling, "暂无回调中的标的")}</div>`,
-    dropped.length ? `<div class="sbl-sec"><h3>今日剔除<span>共 ${dropped.length} 只</span></h3>${sblTable(dropped, "")}</div>` : "",
-    sblHistory(data.history || []),
-  ].join("");
-}
 
 /* ---------------- 买入检查 ---------------- */
 
@@ -1535,33 +1400,27 @@ function runCheck() {
 
 function sblTable(list, emptyText) {
   if (!list.length) return `<div class="sbl-empty">${emptyText}</div>`;
-  const body = list.map((r) => {
-    const sb = r.sb;
-    const life = sb.st ? sb.st.life : sb.life;
-    const dist = life && r.price ? (r.price / life - 1) * 100 : null;
-    const st = sb.st ? sb.st.s : (sb.ok ? "今日爆量" : "—");
-    const stCls = st === "企稳可进" ? "up" : st === "失效" ? "down" : "";
-    const extra = sb.st
-      ? `${sb.st.d === 0 ? "当日" : "D+" + sb.st.d} · 量比 ${(sb.st.vr * 100).toFixed(0)}%${sb.st.held ? "" : " · 已破位"}`
-      : (sb.ok ? "等 1–3 日缩量回调" : "—");
-    return `<tr data-code="${r.code}">
-      <td><div class="name-cell"><b>${esc(r.name)}</b><span>${r.code} · ${esc(r.asset)}</span></div></td>
-      <td class="col-num">${sb.m.toFixed(1)} 倍</td>
-      <td class="col-num ${sb.c > 0 ? "up" : "down"}">${fmtPct(sb.c)}</td>
-      <td class="col-num">${(sb.b * 100).toFixed(0)}%</td>
-      <td class="col-num">${(sb.u * 100).toFixed(0)}%</td>
-      <td class="col-num">${sb.f.toFixed(1)}%</td>
-      <td class="col-num">${fmt(life)}</td>
-      <td class="col-num">${dist == null ? "—" : fmtPct(dist, 1)}</td>
-      <td><span class="pos-advice ${stCls}">${st}</span><em style="display:block;color:var(--dim);font-size:10px">${extra}</em></td>
+  const rows = list.map((it) => {
+    const cls = it.state === "企稳可进" ? "up" : it.state === "回调中" ? "" : it.state === "今日爆量" ? "" : "down";
+    return `<tr>
+      <td><div class="name-cell"><b>${esc(it.name)}</b><span>${it.code}</span></div></td>
+      <td class="col-num">${it.sig_date || "—"}</td>
+      <td class="col-num">${it.mult == null ? "—" : it.mult.toFixed(1) + " 倍"}</td>
+      <td class="col-num ${(it.chg || 0) > 0 ? "up" : "down"}">${it.chg == null ? "—" : fmtPct(it.chg)}</td>
+      <td class="col-num">${it.life == null ? "—" : fmt(it.life)}</td>
+      <td class="col-num">${it.price == null ? "—" : fmt(it.price)}</td>
+      <td class="col-num">${it.dist_life == null ? "—" : fmtPct(it.dist_life, 1)}</td>
+      <td class="col-num">${it.days == null ? "—" : "D+" + it.days}</td>
+      <td class="col-num">${it.vr == null ? "—" : (it.vr * 100).toFixed(0) + "%"}</td>
+      <td><span class="pos-advice ${cls}">${it.state}${it.reason ? "：" + it.reason : ""}</span></td>
     </tr>`;
   }).join("");
   return `<div class="board"><table class="grid sbl-grid">
     <thead><tr>
-      <th>名称 / 代码</th><th class="col-num">量比</th><th class="col-num">涨幅</th>
-      <th class="col-num">实体</th><th class="col-num">上影</th><th class="col-num">横盘 30 日</th>
-      <th class="col-num">生命线</th><th class="col-num">距生命线</th><th>状态</th>
-    </tr></thead><tbody>${body}</tbody></table></div>`;
+      <th>名称 / 代码</th><th class="col-num">信号日</th><th class="col-num">量比</th>
+      <th class="col-num">涨幅</th><th class="col-num">生命线</th><th class="col-num">现价</th>
+      <th class="col-num">距生命线</th><th class="col-num">持有日</th><th class="col-num">量缩</th><th>状态</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function sblHistory(hist) {
@@ -1577,7 +1436,7 @@ function sblHistory(hist) {
       <td style="color:var(--dim);font-size:11.5px">${drops || "—"}</td>
     </tr>`;
   }).join("");
-  return `<div class="sbl-sec"><h3>信号历史<span>最近 ${hist.length} 个交易日，每天都有信号属正常</span></h3>
+  return `<div class="sbl-sec"><h3>信号历史<span>最近 ${hist.length} 个交易日</span></h3>
     <div class="board"><table class="grid sbl-grid">
       <thead><tr><th>日期</th><th class="col-num">新增</th><th>信号标的</th><th class="col-num">剔除</th><th>剔除原因</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -1586,23 +1445,24 @@ function sblHistory(hist) {
 
 function renderSbl3() {
   const box = $("sbl-sections");
-  const rows = state.rows.filter((r) => r.sb);
-  const ready = rows.filter((r) => r.sb.ok).sort((a, b) => b.sb.m - a.sb.m);
-  const confirm = rows.filter((r) => r.sb.st && r.sb.st.s === "企稳可进").sort((a, b) => a.sb.st.d - b.sb.st.d);
-  const pulling = rows.filter((r) => r.sb.st && r.sb.st.s === "回调中").sort((a, b) => a.sb.st.d - b.sb.st.d);
-  const broken = rows.filter((r) => r.sb.st && r.sb.st.s === "失效");
-  const near = rows.filter((r) => !r.sb.ok && !r.sb.st && r.sb.m >= 2 && r.sb.c >= 1)
-    .sort((a, b) => b.sb.m - a.sb.m).slice(0, 20);
-
+  const data = state.base && state.base.meta && state.base.meta.sbl3;
+  if (!data || !data.pool) {
+    box.innerHTML = '<div class="sbl-empty">本次构建没有三倍量数据，请重建数据。</div>';
+    return;
+  }
+  const pool = data.pool || [];
+  const fresh = pool.filter((x) => x.state === "今日爆量" || x.days === 0);
+  const ready = pool.filter((x) => x.state === "企稳可进");
+  const pulling = pool.filter((x) => x.state === "回调中" && !(x.days === 0));
+  const dropped = data.dropped || [];
   box.innerHTML = [
-    `<div class="sbl-sec"><h3>今日爆量 · 观察不追<span>共 ${ready.length} 只，放量当天不进场</span></h3>${sblTable(ready, "今天没有满足条件的三倍量阳线")}</div>`,
-    `<div class="sbl-sec"><h3>企稳可进<span>共 ${confirm.length} 只，缩量回调后收小阳</span></h3>${sblTable(confirm, "暂无企稳信号")}</div>`,
-    `<div class="sbl-sec"><h3>回调中<span>共 ${pulling.length} 只，等量能缩到 30–60% 并收阳</span></h3>${sblTable(pulling, "暂无回调中的标的")}</div>`,
-    `<div class="sbl-sec"><h3>接近爆量<span>量比 ≥2 且涨幅 ≥1%，共 ${near.length} 只（最多显示 20）</span></h3>${sblTable(near, "暂无接近标的")}</div>`,
-    broken.length ? `<div class="sbl-sec"><h3>已失效<span>跌破爆量阳线最低价，共 ${broken.length} 只</span></h3>${sblTable(broken, "")}</div>` : "",
+    `<div class="sbl-sec"><h3>今日新增 · 观察不追<span>${data.date} 共 ${fresh.length} 只</span></h3>${sblTable(fresh, "今天没有满足条件的三倍量阳线")}</div>`,
+    `<div class="sbl-sec"><h3>候选池 · 企稳可进<span>共 ${ready.length} 只</span></h3>${sblTable(ready, "暂无企稳信号")}</div>`,
+    `<div class="sbl-sec"><h3>候选池 · 回调中<span>共 ${pulling.length} 只，等量缩到 30–60% 并收阳</span></h3>${sblTable(pulling, "暂无回调中的标的")}</div>`,
+    dropped.length ? `<div class="sbl-sec"><h3>今日剔除<span>共 ${dropped.length} 只</span></h3>${sblTable(dropped, "")}</div>` : "",
+    sblHistory(data.history || []),
   ].join("");
 }
-
 
 /* ---------------- 个股模拟盘 ---------------- */
 
