@@ -737,6 +737,7 @@ function renderDrawer() {
       <b>纪律：</b>收盘破 17 日线次日无条件离场；不破 5 日线持股；周线 J ≥ 80 卖一半；单只不超过 20% 仓位。
     </div>
     ${premiumNote}
+    <button class="dw-check" type="button" data-check="${r.code}">用「买入检查」逐条核一遍</button>
     <div class="dw-note">
       盘中均线与周线 J 用实时价计算，属动态值，收盘后才作最终确认。
       数据来源：东方财富 push2 快照 / push2his 日线。本页仅作信号提示，不构成投资建议。
@@ -825,6 +826,18 @@ function bind() {
   el.refreshBtn.addEventListener("click", () => refresh());
   document.querySelectorAll(".tab").forEach((t) => {
     t.addEventListener("click", () => setView(t.dataset.view));
+  });
+  $("check-btn").addEventListener("click", runCheck);
+  $("check-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); runCheck(); }
+  });
+  el.drawer.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-check]");
+    if (!btn) return;
+    closeDrawer();
+    setView("check");
+    $("check-input").value = btn.dataset.check;
+    runCheck();
   });
   $("pos-form").addEventListener("submit", addPosition);
   $("pos-clear").addEventListener("click", () => {
@@ -1260,5 +1273,94 @@ function setView(view) {
   document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.view === view));
   $("view-board").hidden = view !== "board";
   $("view-positions").hidden = view !== "positions";
+  $("view-check").hidden = view !== "check";
   if (view === "positions") renderPositions();
+  if (view === "check" && $("check-input").value.trim()) runCheck();
+}
+
+
+/* ---------------- 买入检查 ---------------- */
+
+function checkStep(n, title, pass, value, cls) {
+  const mark = pass ? "✓" : "✗";
+  const klass = cls || (pass ? "pass" : "fail");
+  return `<div class="check-step ${klass}"><span><span class="mark">${mark}</span>${n}. ${title}</span><span class="v">${value}</span></div>`;
+}
+
+function renderCheck(code) {
+  const box = $("check-result");
+  const q = String(code || "").trim();
+  if (!q) { box.innerHTML = ""; return; }
+  const r = state.rows.find((x) => x.code === q) ||
+    state.rows.find((x) => x.name.toLowerCase().includes(q.toLowerCase()));
+  if (!r) {
+    box.innerHTML = `<div class="empty">没找到「${esc(q)}」，试试 6 位代码或名称关键词。</div>`;
+    return;
+  }
+  const tier = state.tier;
+  const s1 = !!(tier && tier.name === "进攻");
+  const s2 = !!r.stable17;
+  const s3 = r.flow3 != null && r.flow3 > 0;
+  const s4 = r.order === "多头" || r.macdState === "金叉" || r.macdState === "多头";
+  const redJ = r.jLast != null && r.jLast >= 80;
+  const redPrem = r.premium != null && r.premium > 3;
+  const redDist = r.distMa20 != null && r.distMa20 > 15;
+  const red = redJ || redPrem || redDist;
+
+  const tierText = tier
+    ? `${tier.name}｜上证${tier.sh.above ? "上" : "下"}、创业板${tier.cy.above ? "上" : "下"}`
+    : "档位不可用";
+  const structText = [r.order || "—", `MACD ${r.macdState || "—"}`, `5/10日线 ${r.distMa5 == null ? "—" : fmtPct(r.distMa5, 1)} / ${r.distMa10 == null ? "—" : fmtPct(r.distMa10, 1)}`].join("｜");
+  const riskText = [`J ${r.jLast == null ? "—" : r.jLast.toFixed(0)}`,
+                    `距20日 ${fmtPct(r.distMa20, 1)}`,
+                    `溢价 ${r.premium == null ? "—" : fmtPct(r.premium, 2)}`,
+                    `成交额 ${fmtAmount(r.amount)}`].join("｜");
+
+  const hardOk = s1 && s2 && s3 && !red;
+  let verdict, cls, advice;
+  if (hardOk && s4) {
+    verdict = "✓ 可以买";
+    cls = "ok";
+    advice = `尾盘（14:45 后）再确认一次：现价仍在 MA17 ${fmt(r.ma17)} 上方。止损位 ${fmt(r.ma17)}，破 5 日线 ${fmt(r.ma5)} 减仓。`;
+  } else if (hardOk && !s4) {
+    verdict = "△ 条件满足，结构一般";
+    cls = "warn";
+    advice = `三条硬条件都过，但均线/MACD 还没转强，建议半仓或等 MACD 金叉。止损 ${fmt(r.ma17)}。`;
+  } else {
+    const miss = [];
+    if (!s1) miss.push(`档位（当前${tier ? tier.name : "未知"}）`);
+    if (!s2) miss.push("站稳 17 日线");
+    if (!s3) miss.push("资金流入");
+    if (redJ) miss.push("周线 J ≥80");
+    if (redPrem) miss.push("溢价 >3%");
+    if (redDist) miss.push("距 20 日线 >15%");
+    verdict = "✗ 暂不可买";
+    cls = "no";
+    advice = `缺：${miss.join("、")}。${s2 ? `可等回踩 MA17 ${fmt(r.ma17)} 附近再观察` : "等它重新站上 17 日线"}。`;
+  }
+
+  box.innerHTML = `
+    <div class="check-card">
+      <div class="check-head">
+        <h2>${esc(r.name)}</h2>
+        <span class="code">${r.code} · ${esc(r.asset)}</span>
+        <span class="price">${fmt(r.price)}</span>
+        <span class="pct ${r.pct > 0 ? "up" : r.pct < 0 ? "down" : "flat"}">${fmtPct(r.pct)}</span>
+      </div>
+      <div class="dw-sub">${r.state || ""} · 行情 ${r.qdate || "—"}</div>
+      <div class="check-verdict ${cls}">${verdict}<small>${esc(advice)}</small></div>
+      <div class="check-steps">
+        ${checkStep(1, "档位为进攻档", s1, tierText)}
+        ${checkStep(2, "站稳 17 日线（今昨两日）", s2, `${fmtPct(r.distMa17, 2)}｜MA17 ${fmt(r.ma17)}`)}
+        ${checkStep(3, "资金流入（3 日）", s3, r.flow3 == null ? "无数据" : fmtInflow(r.flow3))}
+        ${checkStep(4, "结构：均线 / MACD", s4, structText, s4 ? "pass" : "warn")}
+        ${checkStep(5, "风险：J / 距20日 / 溢价", !red, riskText)}
+      </div>
+    </div>`;
+}
+
+function runCheck() {
+  const raw = $("check-input").value.trim();
+  $("check-msg").textContent = "";
+  renderCheck(raw);
 }
