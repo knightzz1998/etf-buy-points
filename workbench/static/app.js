@@ -321,7 +321,7 @@ function matchBase(r) {
   // 搜索直达：命中名称或代码就显示，不受类型/成交额/信号筛选影响
   if (s) return r.name.toLowerCase().includes(s) || r.code.includes(s);
   if (state.asset !== "all" && r.asset !== state.asset) return false;
-  if (r.amount < state.minAmount) return false;
+  if ((r.amountRef ?? r.amount) < state.minAmount) return false;
   if (state.poolOnly) {
     if (!["宽基", "行业主题"].includes(r.asset)) return false;
     if (r.premium != null && r.premium > 3) return false;
@@ -350,7 +350,7 @@ function filteredRows() {
 
 const SORT_DEFAULT_DIR = {
   signal: 1, name: 1, price: -1, pct: -1, dist17: -1, dist20: -1,
-  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, premium: -1, r30: -1,
+  met: -1, j: 1, amount: -1, inflow: -1, flow3: -1, flowsig: -1, premium: -1, r30: -1,
 };
 
 function sortValue(r, key) {
@@ -366,6 +366,7 @@ function sortValue(r, key) {
     case "amount": return r.amount;
     case "inflow": return r.mainInflow ?? 0;
     case "flow3": return r.flow3 ?? 0;
+    case "flowsig": return flowSignal(r).rank;
     case "premium": return r.premium ?? -999;
     case "r30": return r.r30 ?? -999;
     default: return 0;
@@ -419,8 +420,36 @@ function flowLines(r) {
   if (items.every(([, v]) => v == null)) return '<span class="dash">—</span>';
   return items.map(([label, v]) => {
     const c = v > 0 ? "pos" : v < 0 ? "neg" : "dash";
-    return `<span class="${c}">${label} ${fmtInflow(v)}</span>`;
+    const arrow = v > 0 ? "↑ " : v < 0 ? "↓ " : "";
+    return `<span class="${c}">${label} ${arrow}${fmtInflow(v)}</span>`;
   }).join("<br>");
+}
+
+// 资金方向：3/5/10 日同号判定趋势，再看日均强度给出加速/放缓
+function flowSignal(r) {
+  const a = r.flow3, b = r.flow5, c = r.flow10;
+  if (a == null || b == null || c == null) return { text: "—", mark: "", cls: "", rank: -1 };
+  let text, cls, rank;
+  if (a > 0 && b > 0 && c > 0) { text = "持续流入"; cls = "in"; rank = 4; }
+  else if (a < 0 && b < 0 && c < 0) { text = "持续流出"; cls = "out"; rank = 0; }
+  else if (a > 0 && b <= 0) { text = "转为流入"; cls = "in"; rank = 3; }
+  else if (a < 0 && b >= 0) { text = "转为流出"; cls = "out"; rank = 1; }
+  else { text = "资金分歧"; cls = "mix"; rank = 2; }
+  let pace = "";
+  const avg3 = a / 3;
+  const avg5 = b / 5;
+  if (cls !== "mix" && Math.abs(avg5) > 0) {
+    const ratio = Math.abs(avg3) / Math.abs(avg5);
+    pace = ratio >= 1.2 ? "加速" : ratio <= 0.8 ? "放缓" : "平稳";
+  }
+  const mark = cls === "in" ? "↑" : cls === "out" ? "↓" : "~";
+  return { text, mark, cls, pace, rank };
+}
+
+function flowBadge(r) {
+  const f = flowSignal(r);
+  if (!f.text || f.text === "—") return '<span class="flow-badge mix">—</span>';
+  return `<span class="flow-badge ${f.cls}">${f.mark} ${f.text}</span>${f.pace ? `<span class="flow-pace">${f.pace}</span>` : ""}`;
 }
 
 function condTags(r) {
@@ -458,6 +487,7 @@ function rowHtml(r) {
     <td class="col-num amount">${fmtAmount(r.amount)}</td>
     <td class="col-num col-inflow inflow ${(r.mainInflow ?? 0) > 0 ? "pos" : (r.mainInflow ?? 0) < 0 ? "neg" : ""}">${fmtInflow(r.mainInflow)}</td>
     <td class="col-num col-flow flowcell">${flowLines(r)}</td>
+    <td class="col-flow">${flowBadge(r)}</td>
     ${premiumCell}
     <td class="col-spark spark">${sparkline(r.spark, { color: sparkColor(r) })}</td>
   </tr>`;
@@ -1000,6 +1030,7 @@ function renderPositions() {
       <td class="col-num">${x.p.shares.toLocaleString("zh-CN")}</td>
       <td class="col-num">${weight.toFixed(1)}%</td>
       <td class="col-num flowcell">${flowCell(x.p.code)}</td>
+      <td class="col-flow">${posFlowBadge(x.p.code)}</td>
       <td class="col-num"><span class="dstack"><span>${fmt(stop)}</span><em>${stopDist == null ? "—" : fmtPct(stopDist, 1)}</em></span></td>
       <td class="col-num"><span class="dstack"><span>${fmt(trim)}</span><em>${trimDist == null ? "—" : fmtPct(trimDist, 1)}</em></span></td>
       <td class="col-num"><span class="dstack"><span>${tpText(tp1, tp1d)}</span><em>${tpText(tp2, tp2d)}</em></span></td>
@@ -1013,6 +1044,13 @@ function renderPositions() {
   loadFlows(rows.map((x) => x.p.code)).then((n) => {
     if (n && state.view === "positions") renderPositions();
   });
+}
+
+function posFlowBadge(code) {
+  const f = flowCache.get(code);
+  if (!f) return '<span class="flow-badge mix">读取中</span>';
+  if (f.error) return '<span class="flow-badge mix">—</span>';
+  return flowBadge({ flow3: f.s3, flow5: f.s5, flow10: f.s10 });
 }
 
 function flowCell(code) {

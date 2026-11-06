@@ -82,6 +82,8 @@ export function evaluate(rec, q) {
     price,
     pct: Number(q.pct) || 0,
     amount: Number(q.amount) || 0,
+    // 流动性过滤用：早盘今日成交额未累积，取今日实时与上一交易日全日的较大值
+    amountRef: Math.max(Number(q.amount) || 0, Number(rec.amt) || 0),
     turnover: Number(q.turnover) || 0,
     liangbi: Number(q.liangbi) || 0,
     mainInflow: Number(q.mainInflow) || 0,
